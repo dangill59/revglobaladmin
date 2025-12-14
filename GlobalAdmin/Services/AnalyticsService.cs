@@ -55,23 +55,39 @@ public class AnalyticsService
             LicenseCount = WorkspaceService.GetInt(workspace, "maxUsers", 5)
         };
 
+        // Check features.revSeats.count or features.userCount.count for license count
+        if (workspace.Contains("features") && workspace["features"].IsBsonDocument)
+        {
+            var features = workspace["features"].AsBsonDocument;
+            if (features.Contains("revSeats") && features["revSeats"].IsBsonDocument)
+            {
+                var revSeats = features["revSeats"].AsBsonDocument;
+                if (revSeats.Contains("count"))
+                {
+                    stats.LicenseCount = revSeats["count"].ToInt32();
+                }
+            }
+        }
+
         try
         {
-            if (string.IsNullOrEmpty(workspaceName)) return stats;
+            if (string.IsNullOrEmpty(workspaceId)) return stats;
 
-            var db = _mongoClient.GetDatabase(workspaceName);
+            // Database name is "rev_{workspaceId}" not the workspace name
+            var dbName = $"rev_{workspaceId}";
+            var db = _mongoClient.GetDatabase(dbName);
 
             // Get database stats
             var dbStats = await db.RunCommandAsync<BsonDocument>(new BsonDocument("dbStats", 1));
             stats.DatabaseSizeBytes = dbStats.GetValue("dataSize", 0).ToInt64();
             stats.StorageSizeBytes = dbStats.GetValue("storageSize", 0).ToInt64();
 
-            // Get document count
-            var pageHolders = db.GetCollection<BsonDocument>("pageHolders");
+            // Get document count (collection is "pageholders" lowercase)
+            var pageHolders = db.GetCollection<BsonDocument>("pageholders");
             stats.DocumentCount = (int)await pageHolders.CountDocumentsAsync(new BsonDocument("_t", "DocumentModel"));
 
-            // Get user count
-            var users = db.GetCollection<BsonDocument>("users");
+            // Get user count (collection is "workspaceUsers")
+            var users = db.GetCollection<BsonDocument>("workspaceUsers");
             stats.UserCount = (int)await users.CountDocumentsAsync(new BsonDocument());
 
             // Get active users in last 30 days

@@ -1,193 +1,136 @@
 @page "/users"
 @using GlobalAdmin.Services
-@using commonInterfaces.dbDataTypes
+@using MongoDB.Bson
 @inject UserService UserService
 @rendermode InteractiveServer
 
-<PageTitle>Users</PageTitle>
+<PageTitle>Admin Access</PageTitle>
 
-<h1>Users</h1>
+<h1>Admin Access</h1>
+<p class="text-muted">Manage who can access the GlobalAdmin portal</p>
 
-<div class="mb-3">
-    <div class="input-group">
-        <input type="text" class="form-control" placeholder="Search by email or name..."
-               @bind="_searchTerm" />
-        <button class="btn btn-primary" @onclick="Search">Search</button>
+<div class="card" style="max-width: 500px;">
+    <div class="card-header">
+        <h5 class="mb-0">Add Admin User</h5>
     </div>
-</div>
-
-<p class="text-muted">Total users: @_totalCount</p>
-
-@if (_loading)
-{
-    <p><em>Loading users...</em></p>
-}
-else
-{
-    <table class="table table-striped table-hover">
-        <thead>
-            <tr>
-                <th>Email</th>
-                <th>Name</th>
-                <th>Username</th>
-                <th>Created</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var user in _users)
-            {
-                <tr>
-                    <td>@user.emailaddress</td>
-                    <td>@user.preferredName</td>
-                    <td><small class="text-muted">@user.UserName</small></td>
-                    <td>@user.created?.ToString("yyyy-MM-dd")</td>
-                    <td>
-                        @if (user.isDisabled == true)
-                        {
-                            <span class="badge bg-danger">Disabled</span>
-                        }
-                        else
-                        {
-                            <span class="badge bg-success">Active</span>
-                        }
-                    </td>
-                    <td>
-                        @if (user.isDisabled == true)
-                        {
-                            <button class="btn btn-sm btn-outline-success" @onclick="() => EnableUser(user.id)">Enable</button>
-                        }
-                        else
-                        {
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DisableUser(user.id)">Disable</button>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-
-    <nav>
-        <ul class="pagination">
-            <li class="page-item @(_page == 0 ? "disabled" : "")">
-                <button class="page-link" @onclick="PreviousPage">Previous</button>
-            </li>
-            <li class="page-item">
-                <span class="page-link">Page @(_page + 1)</span>
-            </li>
-            <li class="page-item @(_users.Count < _pageSize ? "disabled" : "")">
-                <button class="page-link" @onclick="NextPage">Next</button>
-            </li>
-        </ul>
-    </nav>
-}
-
-<hr />
-
-<h3>Admin Users</h3>
-
-<div class="mb-3">
-    <div class="input-group" style="max-width: 400px;">
-        <input type="email" class="form-control" placeholder="Add admin email..."
-               @bind="_newAdminEmail" />
-        <button class="btn btn-success" @onclick="AddAdmin">Add Admin</button>
-    </div>
-</div>
-
-<ul class="list-group" style="max-width: 400px;">
-    @foreach (var admin in _adminUsers)
-    {
-        <li class="list-group-item d-flex justify-content-between align-items-center">
-            @admin
-            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveAdmin(admin)">Remove</button>
-        </li>
-    }
-</ul>
-
-@code {
-    private List<User> _users = new();
-    private List<string> _adminUsers = new();
-    private bool _loading = true;
-    private string _searchTerm = "";
-    private string _newAdminEmail = "";
-    private int _page = 0;
-    private int _pageSize = 50;
-    private long _totalCount = 0;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadUsers();
-        await LoadAdmins();
-        _totalCount = await UserService.GetTotalUserCountAsync();
-    }
-
-    private async Task LoadUsers()
-    {
-        _loading = true;
-
-        if (string.IsNullOrWhiteSpace(_searchTerm))
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(_errorMessage))
         {
-            _users = await UserService.GetAllUsersAsync(_page * _pageSize, _pageSize);
+            <div class="alert alert-danger">@_errorMessage</div>
+        }
+        @if (!string.IsNullOrEmpty(_successMessage))
+        {
+            <div class="alert alert-success">@_successMessage</div>
+        }
+        <div class="input-group">
+            <input type="email" class="form-control" placeholder="Email address..."
+                   @bind="_newAdminEmail" @onkeyup="HandleKeyUp" />
+            <button class="btn btn-success" @onclick="AddAdmin" disabled="@_adding">
+                @if (_adding)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                Add
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4" style="max-width: 500px;">
+    <div class="card-header">
+        <h5 class="mb-0">Current Admins (@_adminUsers.Count)</h5>
+    </div>
+    <ul class="list-group list-group-flush">
+        @if (_loading)
+        {
+            <li class="list-group-item"><em>Loading...</em></li>
+        }
+        else if (_adminUsers.Count == 0)
+        {
+            <li class="list-group-item text-muted">No admin users configured</li>
         }
         else
         {
-            _users = await UserService.SearchUsersAsync(_searchTerm);
+            @foreach (var admin in _adminUsers)
+            {
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>@admin</span>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveAdmin(admin)">
+                        Remove
+                    </button>
+                </li>
+            }
         }
+    </ul>
+</div>
 
-        _loading = false;
+@code {
+    private List<string> _adminUsers = new();
+    private bool _loading = true;
+    private bool _adding = false;
+    private string _newAdminEmail = "";
+    private string _errorMessage = "";
+    private string _successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAdmins();
     }
 
     private async Task LoadAdmins()
     {
+        _loading = true;
         _adminUsers = await UserService.GetAdminUsersAsync();
+        _loading = false;
     }
 
-    private async Task Search()
+    private async Task HandleKeyUp(KeyboardEventArgs e)
     {
-        _page = 0;
-        await LoadUsers();
-    }
-
-    private async Task PreviousPage()
-    {
-        if (_page > 0)
+        if (e.Key == "Enter")
         {
-            _page--;
-            await LoadUsers();
+            await AddAdmin();
         }
-    }
-
-    private async Task NextPage()
-    {
-        _page++;
-        await LoadUsers();
-    }
-
-    private async Task DisableUser(string userId)
-    {
-        await UserService.DisableUserAsync(userId);
-        await LoadUsers();
-    }
-
-    private async Task EnableUser(string userId)
-    {
-        await UserService.EnableUserAsync(userId);
-        await LoadUsers();
     }
 
     private async Task AddAdmin()
     {
         if (string.IsNullOrWhiteSpace(_newAdminEmail)) return;
 
-        await UserService.AddAdminUserAsync(_newAdminEmail);
-        _newAdminEmail = "";
-        await LoadAdmins();
+        _adding = true;
+        _errorMessage = "";
+        _successMessage = "";
+
+        try
+        {
+            await UserService.AddAdminUserAsync(_newAdminEmail.Trim().ToLower());
+            _successMessage = $"Added {_newAdminEmail} as admin";
+            _newAdminEmail = "";
+            await LoadAdmins();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _adding = false;
+        }
     }
 
     private async Task RemoveAdmin(string email)
     {
-        await UserService.RemoveAdminUserAsync(email);
-        await LoadAdmins();
+        _errorMessage = "";
+        _successMessage = "";
+
+        try
+        {
+            await UserService.RemoveAdminUserAsync(email);
+            _successMessage = $"Removed {email} from admins";
+            await LoadAdmins();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
     }
 }

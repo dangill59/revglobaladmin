@@ -1,0 +1,85 @@
+@page "/login"
+@using GlobalAdmin.Services
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Login - Global Admin</PageTitle>
+
+<div class="row justify-content-center mt-5">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header text-center">
+                <h4 class="mb-0">Global Admin Login</h4>
+            </div>
+            <div class="card-body">
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="alert alert-danger">@_errorMessage</div>
+                }
+
+                <EditForm Model="@_model" OnValidSubmit="HandleLogin" FormName="LoginForm">
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <InputText @bind-Value="_model.Email" class="form-control" placeholder="admin@example.com" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <InputText @bind-Value="_model.Password" type="password" class="form-control" />
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100" disabled="@_loading">
+                        @if (_loading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Sign In
+                    </button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginModel _model = new();
+    private string _errorMessage = "";
+    private bool _loading = false;
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private async Task HandleLogin()
+    {
+        _loading = true;
+        _errorMessage = "";
+
+        try
+        {
+            var valid = await AuthService.ValidateCredentialsAsync(_model.Email, _model.Password);
+
+            if (valid)
+            {
+                // Set auth cookie via JS interop or redirect to auth endpoint
+                Navigation.NavigateTo($"/api/auth/login?email={Uri.EscapeDataString(_model.Email)}&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}", forceLoad: true);
+            }
+            else
+            {
+                _errorMessage = "Invalid email or password";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Login failed: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private class LoginModel
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+}

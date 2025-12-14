@@ -1,0 +1,527 @@
+@page "/workspaces/{WorkspaceId}"
+@using GlobalAdmin.Services
+@using MongoDB.Bson
+@inject WorkspaceService WorkspaceService
+@inject AnalyticsService AnalyticsService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Workspace Details</PageTitle>
+
+@if (_loading)
+{
+    <p><em>Loading workspace...</em></p>
+}
+else if (_workspace == null)
+{
+    <div class="alert alert-danger">Workspace not found</div>
+    <a href="/workspaces" class="btn btn-secondary">Back to Workspaces</a>
+}
+else
+{
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/workspaces">Workspaces</a></li>
+            <li class="breadcrumb-item active">@_workspaceName</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>@_workspaceName</h1>
+        <div>
+            @if (_isDisabled)
+            {
+                <span class="badge bg-danger fs-6 me-2">Disabled</span>
+                <button class="btn btn-success" @onclick="EnableWorkspace">Enable Workspace</button>
+            }
+            else
+            {
+                <span class="badge bg-success fs-6 me-2">Active</span>
+                <button class="btn btn-outline-danger" @onclick="DisableWorkspace">Disable Workspace</button>
+            }
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="card-title text-primary">@_stats?.UserCount</h3>
+                    <p class="card-text text-muted">Users</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="card-title text-info">@_maxUsers</h3>
+                    <p class="card-text text-muted">Licenses</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="card-title text-success">@_stats?.DocumentCount</h3>
+                    <p class="card-text text-muted">Documents</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3 class="card-title text-warning">@AnalyticsService.FormatBytes(_stats?.DatabaseSizeBytes ?? 0)</h3>
+                    <p class="card-text text-muted">Database Size</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Workspace Info</h5>
+                </div>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Owner</span>
+                        <strong>@_ownerUser</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Database</span>
+                        <code>@_workspaceName</code>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Storage Size</span>
+                        <strong>@AnalyticsService.FormatBytes(_stats?.StorageSizeBytes ?? 0)</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Active Users (30 days)</span>
+                        <strong>@_stats?.ActiveUsersLast30Days</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Last Activity</span>
+                        <strong>@_stats?.LastActivity?.ToString("yyyy-MM-dd HH:mm")</strong>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">License Management</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-3">
+                        <span>Max Users:</span>
+                        <div class="input-group" style="max-width: 200px;">
+                            <button class="btn btn-outline-secondary" type="button" @onclick="DecreaseLicenses" disabled="@(_editMaxUsers <= 1)">-</button>
+                            <input type="number" class="form-control text-center" @bind="_editMaxUsers" min="1" />
+                            <button class="btn btn-outline-secondary" type="button" @onclick="IncreaseLicenses">+</button>
+                        </div>
+                        <button class="btn btn-primary" @onclick="SaveLicenses" disabled="@(_editMaxUsers == _maxUsers || _saving)">
+                            @if (_saving)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Save
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_licenseMessage))
+                    {
+                        <div class="alert alert-success mt-3 mb-0">@_licenseMessage</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features Configuration Section -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Features and Configuration</h5>
+            <button class="btn btn-primary btn-sm" @onclick="SaveFeatures" disabled="@(!_featuresChanged || _savingFeatures)">
+                @if (_savingFeatures)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                Save Changes
+            </button>
+        </div>
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(_featuresMessage))
+            {
+                <div class="alert @(_featuresError ? "alert-danger" : "alert-success") mb-3">@_featuresMessage</div>
+            }
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Full-Text OCR</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">OCR Engine</label>
+                                <select class="form-select" @bind="_ocrEngine" @bind:after="OnFeatureChanged">
+                                    <option value="tess">Tesseract (Free)</option>
+                                    <option value="google">Google Vision (Paid)</option>
+                                </select>
+                                <div class="form-text">Tesseract is free. Google Vision costs per page but has better accuracy.</div>
+                            </div>
+                            @if (_ocrEngine == "google")
+                            {
+                                <div class="mb-0">
+                                    <label class="form-label">Google OCR Quota</label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" @bind="_googleOcrLimit" @bind:after="OnFeatureChanged" />
+                                        <span class="input-group-text">pages</span>
+                                    </div>
+                                    <div class="form-text">Used: @_googleOcrUsed.ToString("N0") / @_googleOcrLimit.ToString("N0") pages</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Zone OCR and Automation</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="barcodeEnabled" checked="@_barcodeEnabled" @onchange="ToggleBarcode" />
+                                <label class="form-check-label" for="barcodeEnabled">Barcode Detection</label>
+                                <div class="form-text">Enable barcode/QR code detection in zone OCR</div>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="scriptsEnabled" checked="@_scriptsEnabled" @onchange="ToggleScripts" />
+                                <label class="form-check-label" for="scriptsEnabled">Automation Scripts</label>
+                                <div class="form-text">Enable automation rules and scripts</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Processing Settings</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="suspendProcessing" checked="@_suspendProcessing" @onchange="ToggleSuspendProcessing" />
+                                <label class="form-check-label" for="suspendProcessing">Suspend Background Processing</label>
+                                <div class="form-text">Temporarily pause all background image processing</div>
+                            </div>
+                            <div class="mb-0">
+                                <label class="form-label">Max Immediate Processing Size</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" @bind="_maxImmediateSize" @bind:after="OnFeatureChanged" min="0" />
+                                    <span class="input-group-text">pages</span>
+                                </div>
+                                <div class="form-text">Documents larger than this are processed in background (0 = always background)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Session Settings</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-0">
+                                <label class="form-label">Inactivity Timeout</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" @bind="_inactivityTimeout" @bind:after="OnFeatureChanged" min="1" />
+                                    <span class="input-group-text">minutes</span>
+                                </div>
+                                <div class="form-text">Users will be logged out after this period of inactivity</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Workspace Users (@_workspaceUsers.Count)</h5>
+        </div>
+        @if (_loadingUsers)
+        {
+            <div class="card-body"><em>Loading users...</em></div>
+        }
+        else if (_workspaceUsers.Count == 0)
+        {
+            <div class="card-body text-muted">No users in this workspace</div>
+        }
+        else
+        {
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in _workspaceUsers)
+                    {
+                        var email = GetUserString(user, "userId");
+                        var name = GetUserString(user, "fullName");
+                        var isAdmin = GetUserString(user, "_id") == "workspace_owner";
+                        var isDisabled = GetUserBool(user, "isDisabled");
+                        <tr>
+                            <td>@email</td>
+                            <td>@name</td>
+                            <td>
+                                @if (isAdmin)
+                                {
+                                    <span class="badge bg-primary">Admin</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">User</span>
+                                }
+                            </td>
+                            <td>
+                                @if (isDisabled)
+                                {
+                                    <span class="badge bg-danger">Disabled</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success">Active</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string WorkspaceId { get; set; } = "";
+
+    private BsonDocument? _workspace;
+    private WorkspaceStats? _stats;
+    private List<BsonDocument> _workspaceUsers = new();
+    private bool _loading = true;
+    private bool _loadingUsers = true;
+    private bool _saving = false;
+    private bool _savingFeatures = false;
+
+    private string _workspaceName = "";
+    private string _ownerUser = "";
+    private int _maxUsers = 5;
+    private int _editMaxUsers = 5;
+    private bool _isDisabled = false;
+    private string _licenseMessage = "";
+
+    // Features state
+    private string _ocrEngine = "tess";
+    private bool _barcodeEnabled = false;
+    private bool _scriptsEnabled = false;
+    private int _googleOcrLimit = 0;
+    private int _googleOcrUsed = 0;
+    private bool _suspendProcessing = false;
+    private int _maxImmediateSize = 0;
+    private int _inactivityTimeout = 15;
+    private bool _featuresChanged = false;
+    private string _featuresMessage = "";
+    private bool _featuresError = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWorkspace();
+    }
+
+    private async Task LoadWorkspace()
+    {
+        _loading = true;
+        _workspace = await WorkspaceService.GetWorkspaceByIdAsync(WorkspaceId);
+
+        if (_workspace != null)
+        {
+            _workspaceName = WorkspaceService.GetString(_workspace, "name");
+            _ownerUser = WorkspaceService.GetString(_workspace, "ownerUser");
+            _maxUsers = WorkspaceService.GetInt(_workspace, "maxUsers", 5);
+            _editMaxUsers = _maxUsers;
+            _isDisabled = WorkspaceService.GetBool(_workspace, "isDisabled");
+
+            LoadFeatures();
+
+            _stats = await AnalyticsService.GetWorkspaceStatsAsync(_workspace);
+
+            _loadingUsers = true;
+            _workspaceUsers = await WorkspaceService.GetWorkspaceUsersAsync(WorkspaceId);
+            _loadingUsers = false;
+        }
+
+        _loading = false;
+    }
+
+    private void LoadFeatures()
+    {
+        if (_workspace == null) return;
+
+        if (_workspace.Contains("features") && _workspace["features"].IsBsonDocument)
+        {
+            var features = _workspace["features"].AsBsonDocument;
+
+            if (features.Contains("fullTextOCR") && features["fullTextOCR"].IsBsonDocument)
+            {
+                var ftOcr = features["fullTextOCR"].AsBsonDocument;
+                if (ftOcr.Contains("config") && ftOcr["config"].IsBsonDocument)
+                {
+                    var config = ftOcr["config"].AsBsonDocument;
+                    if (config.Contains("ocrEngine"))
+                        _ocrEngine = config["ocrEngine"].AsString;
+                }
+            }
+
+            if (features.Contains("barcode") && features["barcode"].IsBsonDocument)
+            {
+                var barcode = features["barcode"].AsBsonDocument;
+                _barcodeEnabled = barcode.Contains("count") && barcode["count"].ToInt32() > 0;
+            }
+
+            if (features.Contains("scripts") && features["scripts"].IsBsonDocument)
+            {
+                var scripts = features["scripts"].AsBsonDocument;
+                _scriptsEnabled = scripts.Contains("count") && scripts["count"].ToInt32() > 0;
+            }
+        }
+
+        if (_workspace.Contains("quotas") && _workspace["quotas"].IsBsonDocument)
+        {
+            var quotas = _workspace["quotas"].AsBsonDocument;
+            if (quotas.Contains("googleOCR") && quotas["googleOCR"].IsBsonDocument)
+            {
+                var gOcr = quotas["googleOCR"].AsBsonDocument;
+                _googleOcrLimit = gOcr.Contains("limit") ? gOcr["limit"].ToInt32() : 0;
+                _googleOcrUsed = gOcr.Contains("usedUp") ? gOcr["usedUp"].ToInt32() : 0;
+            }
+        }
+
+        _suspendProcessing = WorkspaceService.GetBool(_workspace, "suspendBackGroundImageProcessing");
+        _maxImmediateSize = WorkspaceService.GetInt(_workspace, "maxImmediatePageProcessingSize", 0);
+        _inactivityTimeout = WorkspaceService.GetInt(_workspace, "inactivityTimeoutMin", 15);
+        _featuresChanged = false;
+    }
+
+    private void OnFeatureChanged()
+    {
+        _featuresChanged = true;
+        _featuresMessage = "";
+    }
+
+    private void ToggleBarcode(ChangeEventArgs e)
+    {
+        _barcodeEnabled = (bool)(e.Value ?? false);
+        OnFeatureChanged();
+    }
+
+    private void ToggleScripts(ChangeEventArgs e)
+    {
+        _scriptsEnabled = (bool)(e.Value ?? false);
+        OnFeatureChanged();
+    }
+
+    private void ToggleSuspendProcessing(ChangeEventArgs e)
+    {
+        _suspendProcessing = (bool)(e.Value ?? false);
+        OnFeatureChanged();
+    }
+
+    private async Task SaveFeatures()
+    {
+        _savingFeatures = true;
+        _featuresMessage = "";
+        _featuresError = false;
+
+        try
+        {
+            await WorkspaceService.UpdateFeaturesAsync(WorkspaceId, new WorkspaceFeatures
+            {
+                OcrEngine = _ocrEngine,
+                BarcodeEnabled = _barcodeEnabled,
+                ScriptsEnabled = _scriptsEnabled,
+                GoogleOcrLimit = _googleOcrLimit,
+                SuspendProcessing = _suspendProcessing,
+                MaxImmediateSize = _maxImmediateSize,
+                InactivityTimeout = _inactivityTimeout
+            });
+
+            _featuresChanged = false;
+            _featuresMessage = "Features updated successfully";
+        }
+        catch (Exception ex)
+        {
+            _featuresError = true;
+            _featuresMessage = "Error: " + ex.Message;
+        }
+        finally
+        {
+            _savingFeatures = false;
+        }
+    }
+
+    private void IncreaseLicenses() => _editMaxUsers++;
+    private void DecreaseLicenses() { if (_editMaxUsers > 1) _editMaxUsers--; }
+
+    private async Task SaveLicenses()
+    {
+        _saving = true;
+        _licenseMessage = "";
+        try
+        {
+            await WorkspaceService.UpdateLicenseCountAsync(WorkspaceId, _editMaxUsers);
+            _maxUsers = _editMaxUsers;
+            _licenseMessage = "License count updated";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task EnableWorkspace()
+    {
+        await WorkspaceService.EnableWorkspaceAsync(WorkspaceId);
+        _isDisabled = false;
+    }
+
+    private async Task DisableWorkspace()
+    {
+        await WorkspaceService.DisableWorkspaceAsync(WorkspaceId);
+        _isDisabled = true;
+    }
+
+    private string GetUserString(BsonDocument doc, string field, string defaultValue = "")
+    {
+        if (doc.Contains(field) && doc[field].IsString)
+            return doc[field].AsString;
+        return defaultValue;
+    }
+
+    private bool GetUserBool(BsonDocument doc, string field)
+    {
+        if (doc.Contains(field) && doc[field].IsBoolean)
+            return doc[field].AsBoolean;
+        return false;
+    }
+}

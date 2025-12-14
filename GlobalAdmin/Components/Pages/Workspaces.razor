@@ -37,7 +37,7 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var ws in _workspaces)
+            @foreach (var ws in FilteredWorkspaces)
             {
                 var id = WorkspaceService.GetId(ws);
                 var name = WorkspaceService.GetString(ws, "name");
@@ -45,7 +45,7 @@ else
                 var maxUsers = WorkspaceService.GetInt(ws, "maxUsers", 5);
                 var isDisabled = WorkspaceService.GetBool(ws, "isDisabled");
                 <tr>
-                    <td>@name</td>
+                    <td><a href="/workspaces/@id">@name</a></td>
                     <td>@owner</td>
                     <td>0</td>
                     <td>
@@ -63,6 +63,7 @@ else
                     </td>
                     <td>
                         <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" @onclick="() => ShowEditModal(ws)">Edit</button>
                             @if (isDisabled)
                             {
                                 <button class="btn btn-outline-success" @onclick="() => EnableWorkspace(id)">Enable</button>
@@ -79,10 +80,128 @@ else
     </table>
 }
 
+@if (_showCreateModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Workspace</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (HasError)
+                    {
+                        <div class="alert alert-danger">@_errorMessage</div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Workspace Name</label>
+                        <input type="text" class="form-control" @bind="_newWorkspaceName" placeholder="e.g. acme-corp" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Owner Email</label>
+                        <input type="email" class="form-control" @bind="_newWorkspaceOwner" placeholder="admin@acme.com" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max Users (Licenses)</label>
+                        <input type="number" class="form-control" @bind="_newWorkspaceMaxUsers" min="1" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateWorkspace" disabled="@_creating">
+                        @if (_creating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showEditModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Workspace: @_editWorkspaceName</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (HasError)
+                    {
+                        <div class="alert alert-danger">@_errorMessage</div>
+                    }
+                    @if (HasSuccess)
+                    {
+                        <div class="alert alert-success">@_successMessage</div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Workspace Name</label>
+                        <input type="text" class="form-control" value="@_editWorkspaceName" disabled />
+                        <small class="text-muted">Name cannot be changed</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Owner Email</label>
+                        <input type="text" class="form-control" value="@_editWorkspaceOwner" disabled />
+                        <small class="text-muted">Owner cannot be changed here</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max Users (Licenses)</label>
+                        <div class="input-group">
+                            <button class="btn btn-outline-secondary" type="button" @onclick="DecreaseLicenses" disabled="@(_editMaxUsers <= 1)">-</button>
+                            <input type="number" class="form-control text-center" @bind="_editMaxUsers" min="1" style="max-width: 100px;" />
+                            <button class="btn btn-outline-secondary" type="button" @onclick="IncreaseLicenses">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveLicenses" disabled="@_saving">
+                        @if (_saving)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<BsonDocument> _workspaces = new();
     private bool _loading = true;
     private string _searchTerm = "";
+
+    private bool _showCreateModal = false;
+    private bool _creating = false;
+    private string _newWorkspaceName = "";
+    private string _newWorkspaceOwner = "";
+    private int _newWorkspaceMaxUsers = 5;
+    private string _errorMessage = "";
+
+    private bool _showEditModal = false;
+    private bool _saving = false;
+    private string _editWorkspaceId = "";
+    private string _editWorkspaceName = "";
+    private string _editWorkspaceOwner = "";
+    private int _editMaxUsers = 5;
+    private string _successMessage = "";
+
+    private bool HasError => _errorMessage.Length > 0;
+    private bool HasSuccess => _successMessage.Length > 0;
+
+    private IEnumerable<BsonDocument> FilteredWorkspaces => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _workspaces
+        : _workspaces.Where(ws =>
+            WorkspaceService.GetString(ws, "name").Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            WorkspaceService.GetString(ws, "ownerUser").Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
@@ -98,6 +217,90 @@ else
 
     private void ShowCreateModal()
     {
+        _newWorkspaceName = "";
+        _newWorkspaceOwner = "";
+        _newWorkspaceMaxUsers = 5;
+        _errorMessage = "";
+        _showCreateModal = true;
+    }
+
+    private void ShowEditModal(BsonDocument workspace)
+    {
+        _editWorkspaceId = WorkspaceService.GetId(workspace);
+        _editWorkspaceName = WorkspaceService.GetString(workspace, "name");
+        _editWorkspaceOwner = WorkspaceService.GetString(workspace, "ownerUser");
+        _editMaxUsers = WorkspaceService.GetInt(workspace, "maxUsers", 5);
+        _errorMessage = "";
+        _successMessage = "";
+        _showEditModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showCreateModal = false;
+        _showEditModal = false;
+        _errorMessage = "";
+        _successMessage = "";
+    }
+
+    private void IncreaseLicenses()
+    {
+        _editMaxUsers++;
+    }
+
+    private void DecreaseLicenses()
+    {
+        if (_editMaxUsers > 1)
+            _editMaxUsers--;
+    }
+
+    private async Task SaveLicenses()
+    {
+        _saving = true;
+        _errorMessage = "";
+        _successMessage = "";
+
+        try
+        {
+            await WorkspaceService.UpdateLicenseCountAsync(_editWorkspaceId, _editMaxUsers);
+            _successMessage = "License count updated successfully";
+            await LoadWorkspaces();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CreateWorkspace()
+    {
+        if (string.IsNullOrWhiteSpace(_newWorkspaceName) || string.IsNullOrWhiteSpace(_newWorkspaceOwner))
+        {
+            _errorMessage = "Workspace name and owner email are required";
+            return;
+        }
+
+        _creating = true;
+        _errorMessage = "";
+
+        try
+        {
+            await WorkspaceService.CreateWorkspaceAsync(_newWorkspaceName, _newWorkspaceOwner, _newWorkspaceMaxUsers);
+            CloseModal();
+            await LoadWorkspaces();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _creating = false;
+        }
     }
 
     private async Task DisableWorkspace(string id)

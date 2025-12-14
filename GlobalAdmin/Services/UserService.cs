@@ -1,4 +1,3 @@
-using commonInterfaces.dbDataTypes;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -17,13 +16,13 @@ public class UserService
         _logger = logger;
     }
 
-    public IMongoCollection<User> AllUsers =>
-        _globalAuthDb.GetCollection<User>("allusers");
+    public IMongoCollection<BsonDocument> AllUsers =>
+        _globalAuthDb.GetCollection<BsonDocument>("allusers");
 
     public IMongoCollection<BsonDocument> AdminUsers =>
         _globalAuthDb.GetCollection<BsonDocument>("revAdminUsers");
 
-    public async Task<List<User>> GetAllUsersAsync(int skip = 0, int take = 100)
+    public async Task<List<BsonDocument>> GetAllUsersAsync(int skip = 0, int take = 100)
     {
         return await AllUsers
             .Find(_ => true)
@@ -32,44 +31,38 @@ public class UserService
             .ToListAsync();
     }
 
-    public async Task<List<User>> SearchUsersAsync(string searchTerm)
+    public async Task<List<BsonDocument>> SearchUsersAsync(string searchTerm)
     {
-        var filter = Builders<User>.Filter.Or(
-            Builders<User>.Filter.Regex(u => u.emailaddress, new BsonRegularExpression(searchTerm, "i")),
-            Builders<User>.Filter.Regex(u => u.preferredName, new BsonRegularExpression(searchTerm, "i")),
-            Builders<User>.Filter.Regex(u => u.UserName, new BsonRegularExpression(searchTerm, "i"))
+        var filter = Builders<BsonDocument>.Filter.Or(
+            Builders<BsonDocument>.Filter.Regex("emailaddress", new BsonRegularExpression(searchTerm, "i")),
+            Builders<BsonDocument>.Filter.Regex("preferredName", new BsonRegularExpression(searchTerm, "i")),
+            Builders<BsonDocument>.Filter.Regex("UserName", new BsonRegularExpression(searchTerm, "i"))
         );
 
         return await AllUsers.Find(filter).Limit(100).ToListAsync();
     }
 
-    public async Task<User?> GetUserByIdAsync(string id)
-    {
-        return await AllUsers.Find(u => u.id == id).FirstOrDefaultAsync();
-    }
-
-    public async Task<User?> GetUserByEmailAsync(string email)
-    {
-        return await AllUsers.Find(u => u.emailaddress == email).FirstOrDefaultAsync();
-    }
-
     public async Task<bool> DisableUserAsync(string userId)
     {
-        var update = Builders<User>.Update
-            .Set(u => u.isDisabled, true)
-            .Set(u => u.modified, DateTime.UtcNow);
+        var update = Builders<BsonDocument>.Update
+            .Set("isDisabled", true)
+            .Set("modified", DateTime.UtcNow);
 
-        var result = await AllUsers.UpdateOneAsync(u => u.id == userId, update);
+        var result = await AllUsers.UpdateOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(userId)),
+            update);
         return result.ModifiedCount > 0;
     }
 
     public async Task<bool> EnableUserAsync(string userId)
     {
-        var update = Builders<User>.Update
-            .Set(u => u.isDisabled, false)
-            .Set(u => u.modified, DateTime.UtcNow);
+        var update = Builders<BsonDocument>.Update
+            .Set("isDisabled", false)
+            .Set("modified", DateTime.UtcNow);
 
-        var result = await AllUsers.UpdateOneAsync(u => u.id == userId, update);
+        var result = await AllUsers.UpdateOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(userId)),
+            update);
         return result.ModifiedCount > 0;
     }
 
@@ -121,5 +114,27 @@ public class UserService
             Builders<BsonDocument>.Filter.Eq("email", email)).FirstOrDefaultAsync();
 
         return admin != null;
+    }
+
+    // Helper methods
+    public static string GetId(BsonDocument doc)
+    {
+        return doc["_id"].AsObjectId.ToString();
+    }
+
+    public static string GetString(BsonDocument doc, string field, string defaultValue = "")
+    {
+        return doc.Contains(field) && !doc[field].IsBsonNull ? doc[field].AsString : defaultValue;
+    }
+
+    public static bool GetBool(BsonDocument doc, string field, bool defaultValue = false)
+    {
+        return doc.Contains(field) && !doc[field].IsBsonNull ? doc[field].AsBoolean : defaultValue;
+    }
+
+    public static DateTime? GetDateTime(BsonDocument doc, string field)
+    {
+        if (!doc.Contains(field) || doc[field].IsBsonNull) return null;
+        return doc[field].ToUniversalTime();
     }
 }
