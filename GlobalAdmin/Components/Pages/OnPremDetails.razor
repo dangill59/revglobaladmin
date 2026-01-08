@@ -1,0 +1,418 @@
+@page "/onprem/{InstallId}"
+@using GlobalAdmin.Models
+@using GlobalAdmin.Services
+@inject OnPremService OnPremService
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>@(_install?.CustomerName ?? "On-Prem Details")</PageTitle>
+
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/onprem">On-Prem Installations</a></li>
+        <li class="breadcrumb-item active">@(_install?.CustomerName ?? "Loading...")</li>
+    </ol>
+</nav>
+
+@if (_loading)
+{
+    <p><em>Loading installation details...</em></p>
+}
+else if (_install == null)
+{
+    <div class="alert alert-danger">Installation not found.</div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1>@_install.CustomerName</h1>
+            <p class="text-muted mb-0">@_install.ContactEmail</p>
+        </div>
+        <div>
+            @switch (_install.Status)
+            {
+                case "healthy":
+                    <span class="badge bg-success fs-6">Healthy</span>
+                    break;
+                case "warning":
+                    <span class="badge bg-warning text-dark fs-6">Warning</span>
+                    break;
+                case "offline":
+                    <span class="badge bg-danger fs-6">Offline</span>
+                    break;
+            }
+        </div>
+    </div>
+
+    <div class="row">
+        @* Left column: Metrics & Status *@
+        <div class="col-md-8">
+            @* Metrics Card *@
+            <div class="card mb-3">
+                <div class="card-header">Metrics</div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col">
+                            <h3>@(_install.Metrics?.ActiveUsers ?? 0) / @(_install.License?.MaxUsers ?? 0)</h3>
+                            <small class="text-muted">Active Users</small>
+                        </div>
+                        <div class="col">
+                            <h3>@((_install.Metrics?.DocumentCount ?? 0).ToString("N0"))</h3>
+                            <small class="text-muted">Documents</small>
+                        </div>
+                        <div class="col">
+                            <h3>@((_install.Metrics?.StorageUsedGB ?? 0).ToString("F1")) GB</h3>
+                            <small class="text-muted">Storage Used</small>
+                        </div>
+                        <div class="col">
+                            <h3>@((_install.Metrics?.OcrPagesThisMonth ?? 0).ToString("N0"))</h3>
+                            <small class="text-muted">OCR Pages (MTD)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Service Status Card *@
+            @if (_install.ServiceStatus != null && _install.ServiceStatus.Any())
+            {
+                <div class="card mb-3">
+                    <div class="card-header">Service Status</div>
+                    <div class="card-body">
+                        <div class="row">
+                            @foreach (var svc in _install.ServiceStatus)
+                            {
+                                <div class="col-md-3 text-center mb-2">
+                                    @if (svc.Value == "running")
+                                    {
+                                        <span class="badge bg-success d-block py-2">@svc.Key</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger d-block py-2">@svc.Key</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* Recent Errors *@
+            @if (_install.RecentErrors != null && _install.RecentErrors.Any())
+            {
+                <div class="card mb-3 border-danger">
+                    <div class="card-header bg-danger text-white">Recent Errors</div>
+                    <div class="card-body">
+                        <ul class="list-unstyled mb-0">
+                            @foreach (var err in _install.RecentErrors.Take(10))
+                            {
+                                <li class="mb-2 pb-2 border-bottom">
+                                    <small class="text-muted">@err.Timestamp.ToString("MMM dd HH:mm")</small>
+                                    <span class="badge @(err.Level == "error" ? "bg-danger" : "bg-warning text-dark") ms-2">@err.Level</span>
+                                    <strong class="ms-2">[@err.Service]</strong>
+                                    <br />
+                                    <span>@err.Message</span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            }
+
+            @* Info Card *@
+            <div class="card mb-3">
+                <div class="card-header">Installation Info</div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tr>
+                            <th style="width: 200px;">Install ID</th>
+                            <td><code>@_install.Id</code></td>
+                        </tr>
+                        <tr>
+                            <th>Version</th>
+                            <td>@_install.Version</td>
+                        </tr>
+                        <tr>
+                            <th>Registered</th>
+                            <td>@_install.Registered.ToString("MMMM dd, yyyy")</td>
+                        </tr>
+                        <tr>
+                            <th>Last Heartbeat</th>
+                            <td>@_install.LastHeartbeat.ToString("MMM dd, yyyy HH:mm:ss") UTC</td>
+                        </tr>
+                        <tr>
+                            <th>Last Backup</th>
+                            <td>
+                                @if (_install.LastBackup.HasValue)
+                                {
+                                    @_install.LastBackup.Value.ToString("MMM dd, yyyy HH:mm")
+                                    @if (_install.LastBackupStatus == "success")
+                                    {
+                                        <span class="badge bg-success ms-2">Success</span>
+                                    }
+                                    else if (_install.LastBackupStatus == "failed")
+                                    {
+                                        <span class="badge bg-danger ms-2">Failed</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Never</span>
+                                }
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @* Right column: License & Config *@
+        <div class="col-md-4">
+            @* License Card *@
+            <div class="card mb-3">
+                <div class="card-header">License</div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(_licenseMessage))
+                    {
+                        <div class="alert @(_licenseSuccess ? "alert-success" : "alert-danger") py-2">
+                            @_licenseMessage
+                        </div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Max Users</label>
+                        <input type="number" class="form-control" @bind="_license.MaxUsers" min="1" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tier</label>
+                        <select class="form-select" @bind="_license.Tier">
+                            <option value="standard">Standard</option>
+                            <option value="professional">Professional</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Google OCR Quota</label>
+                        <input type="number" class="form-control" @bind="_googleOcrQuota" min="0" />
+                        <small class="text-muted">Pages per month (0 = disabled)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Features</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="_featureZoneOcr" id="featureZoneOcr" />
+                            <label class="form-check-label" for="featureZoneOcr">Zone OCR</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="_featureFullTextOcr" id="featureFullTextOcr" />
+                            <label class="form-check-label" for="featureFullTextOcr">Full Text OCR</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="_featureAutomation" id="featureAutomation" />
+                            <label class="form-check-label" for="featureAutomation">Automation</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="_featureBarcode" id="featureBarcode" />
+                            <label class="form-check-label" for="featureBarcode">Barcode Detection</label>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary w-100" @onclick="SaveLicense" disabled="@_savingLicense">
+                        @if (_savingLicense)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Save License
+                    </button>
+                </div>
+            </div>
+
+            @* Config Card *@
+            <div class="card mb-3">
+                <div class="card-header">Configuration</div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(_configMessage))
+                    {
+                        <div class="alert @(_configSuccess ? "alert-success" : "alert-danger") py-2">
+                            @_configMessage
+                        </div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">OCR Engine</label>
+                        <select class="form-select" @bind="_config.OcrEngine">
+                            <option value="tess">Tesseract</option>
+                            <option value="google">Google Vision</option>
+                            <option value="hybrid">Hybrid</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Storage Type</label>
+                        <select class="form-select" @bind="_config.StorageType">
+                            <option value="minio">MinIO (S3)</option>
+                            <option value="file">Local Filesystem</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="_config.BackupsEnabled" id="backupsEnabled" />
+                            <label class="form-check-label" for="backupsEnabled">Managed Backups Enabled</label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Heartbeat Interval (minutes)</label>
+                        <input type="number" class="form-control" @bind="_config.HeartbeatIntervalMinutes" min="5" max="60" />
+                    </div>
+                    <button class="btn btn-primary w-100" @onclick="SaveConfig" disabled="@_savingConfig">
+                        @if (_savingConfig)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Save Configuration
+                    </button>
+                </div>
+            </div>
+
+            @* Commands Card *@
+            <div class="card mb-3">
+                <div class="card-header">Remote Commands</div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(_commandMessage))
+                    {
+                        <div class="alert alert-info py-2">@_commandMessage</div>
+                    }
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" @onclick="@(() => QueueCommand("backup_now"))">
+                            Trigger Backup Now
+                        </button>
+                        <button class="btn btn-outline-warning" @onclick="@(() => QueueCommand("restart_services"))">
+                            Restart Services
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        Commands are queued and executed on next heartbeat.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string InstallId { get; set; } = "";
+
+    private OnPremInstall? _install;
+    private bool _loading = true;
+
+    // License editing
+    private InstallLicense _license = new();
+    private int _googleOcrQuota = 0;
+    private bool _featureZoneOcr = true;
+    private bool _featureFullTextOcr = false;
+    private bool _featureAutomation = true;
+    private bool _featureBarcode = false;
+    private bool _savingLicense = false;
+    private string _licenseMessage = "";
+    private bool _licenseSuccess = false;
+
+    // Config editing
+    private InstallConfig _config = new();
+    private bool _savingConfig = false;
+    private string _configMessage = "";
+    private bool _configSuccess = false;
+
+    // Commands
+    private string _commandMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInstall();
+    }
+
+    private async Task LoadInstall()
+    {
+        _loading = true;
+        _install = await OnPremService.GetInstallAsync(InstallId);
+
+        if (_install != null)
+        {
+            // Initialize license form
+            _license = _install.License ?? new InstallLicense();
+            _googleOcrQuota = _license.GoogleOcrQuota ?? 0;
+            _featureZoneOcr = _license.EnabledFeatures.Contains("zoneOcr");
+            _featureFullTextOcr = _license.EnabledFeatures.Contains("fullTextOcr");
+            _featureAutomation = _license.EnabledFeatures.Contains("automation");
+            _featureBarcode = _license.EnabledFeatures.Contains("barcode");
+
+            // Initialize config form
+            _config = _install.Config ?? new InstallConfig();
+        }
+
+        _loading = false;
+    }
+
+    private async Task SaveLicense()
+    {
+        _savingLicense = true;
+        _licenseMessage = "";
+
+        try
+        {
+            // Build features list
+            var features = new List<string>();
+            if (_featureZoneOcr) features.Add("zoneOcr");
+            if (_featureFullTextOcr) features.Add("fullTextOcr");
+            if (_featureAutomation) features.Add("automation");
+            if (_featureBarcode) features.Add("barcode");
+
+            _license.EnabledFeatures = features;
+            _license.GoogleOcrQuota = _googleOcrQuota > 0 ? _googleOcrQuota : null;
+
+            await OnPremService.UpdateLicenseAsync(InstallId, _license);
+            _licenseMessage = "License updated. Changes will apply on next heartbeat.";
+            _licenseSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _licenseMessage = $"Error: {ex.Message}";
+            _licenseSuccess = false;
+        }
+        finally
+        {
+            _savingLicense = false;
+        }
+    }
+
+    private async Task SaveConfig()
+    {
+        _savingConfig = true;
+        _configMessage = "";
+
+        try
+        {
+            await OnPremService.UpdateConfigAsync(InstallId, _config);
+            _configMessage = "Configuration updated. Changes will apply on next heartbeat.";
+            _configSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _configMessage = $"Error: {ex.Message}";
+            _configSuccess = false;
+        }
+        finally
+        {
+            _savingConfig = false;
+        }
+    }
+
+    private async Task QueueCommand(string commandType)
+    {
+        try
+        {
+            await OnPremService.QueueCommandAsync(InstallId, commandType);
+            _commandMessage = $"Command '{commandType}' queued successfully.";
+        }
+        catch (Exception ex)
+        {
+            _commandMessage = $"Error: {ex.Message}";
+        }
+    }
+}
