@@ -2,17 +2,26 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Copy shared libraries from rev repo (needed for MongoDbService, etc.)
-COPY rev/commonInterfaces/ ./commonInterfaces/
-COPY rev/MongoDbService/ ./MongoDbService/
-COPY rev/workspaceResolver/ ./workspaceResolver/
-COPY rev/BillingUtilities/ ./BillingUtilities/
+# Create directory structure matching csproj relative paths
+# GlobalAdmin.csproj uses paths like ../../rev/commonInterfaces/
+# So we need:
+#   /src/rev/commonInterfaces/
+#   /src/rev/MongoDbService/
+#   /src/rev/workspaceResolver/
+#   /src/rev/BillingUtilities/
+#   /src/global-admin/GlobalAdmin/
+
+# Copy shared libraries from rev repo
+COPY rev/commonInterfaces/ ./rev/commonInterfaces/
+COPY rev/MongoDbService/ ./rev/MongoDbService/
+COPY rev/workspaceResolver/ ./rev/workspaceResolver/
+COPY rev/BillingUtilities/ ./rev/BillingUtilities/
 
 # Copy GlobalAdmin project
-COPY global-admin/GlobalAdmin/ ./GlobalAdmin/
+COPY global-admin/GlobalAdmin/ ./global-admin/GlobalAdmin/
 
 # Restore and build
-WORKDIR /src/GlobalAdmin
+WORKDIR /src/global-admin/GlobalAdmin
 RUN dotnet restore
 RUN dotnet publish -c Release -o /app/publish
 
