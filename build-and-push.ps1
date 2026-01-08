@@ -25,5 +25,8 @@ docker push "${REGISTRY}/${IMAGE}:latest"
 
 Write-Host "Done! Image: ${REGISTRY}/${IMAGE}:${TAG}" -ForegroundColor Green
 Write-Host ""
-Write-Host "To deploy to staging:" -ForegroundColor Yellow
-Write-Host "  kubectl --kubeconfig=`"C:\Users\dan\Downloads\staging-kubeconfig.yaml`" apply -f k8s/deployment.yml -n dallas"
+Write-Host "To deploy to staging (admin.test.sonopaper.com):" -ForegroundColor Yellow
+Write-Host "  kubectl apply -f GlobalAdmin/k8s/deployment-staging.yaml -n dallas"
+Write-Host ""
+Write-Host "To deploy to production (admin.scanrev.com):" -ForegroundColor Yellow
+Write-Host "  kubectl apply -f GlobalAdmin/k8s/deployment.yaml -n <namespace>"
