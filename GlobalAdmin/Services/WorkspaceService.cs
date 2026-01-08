@@ -236,6 +236,46 @@ public class WorkspaceService
 
         return result.ModifiedCount > 0;
     }
+
+    public async Task<bool> UpdateWorkspaceSettingsAsync(string workspaceId, WorkspaceSettings settings)
+    {
+        var softDeleteConfig = new BsonDocument
+        {
+            { "enabled", settings.SoftDeleteEnabled },
+            { "retentionDays", settings.SoftDeleteRetentionDays },
+            { "autoDeleteEnabled", settings.SoftDeleteAutoDelete },
+            { "requireReasonOnDelete", settings.SoftDeleteRequireReason },
+            { "notifyOnPurge", settings.SoftDeleteNotifyOnPurge }
+        };
+
+        var update = Builders<BsonDocument>.Update
+            // Soft Delete
+            .Set("softDeleteConfig", softDeleteConfig)
+            // Features
+            .Set("features.fullTextOCR.count", settings.FeatureFullTextOcr ? 1 : 0)
+            .Set("features.fullTextOCR.config.ocrEngine", settings.OcrEngine)
+            .Set("features.barcode.count", settings.FeatureBarcode ? 1 : 0)
+            .Set("features.scripts.count", settings.FeatureScripts ? 1 : 0)
+            .Set("features.twofactorAuth.count", settings.FeatureTwoFactor ? 1 : 0)
+            // Quotas
+            .Set("quotas.googleOCR.limit", settings.GoogleOcrQuota)
+            // Session & Activity
+            .Set("inactivityTimeoutMin", settings.InactivityTimeout)
+            .Set("activityRetentionHours", settings.ActivityRetentionHours)
+            // Processing
+            .Set("maxImmediatePageProcessingSize", settings.MaxImmediateSize)
+            .Set("suspendBackGroundImageProcessing", settings.SuspendProcessing)
+            .Set("modified", DateTime.UtcNow);
+
+        var result = await Workspaces.UpdateOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(workspaceId)),
+            update);
+
+        _logger.LogInformation("Updated workspace settings for {WorkspaceId}: SoftDelete={SoftDelete}, FullTextOCR={FullText}",
+            workspaceId, settings.SoftDeleteEnabled, settings.FeatureFullTextOcr);
+
+        return result.ModifiedCount > 0;
+    }
 }
 
 public class WorkspaceFeatures
@@ -247,4 +287,32 @@ public class WorkspaceFeatures
     public bool SuspendProcessing { get; set; }
     public int MaxImmediateSize { get; set; }
     public int InactivityTimeout { get; set; } = 15;
+}
+
+public class WorkspaceSettings
+{
+    // Soft Delete
+    public bool SoftDeleteEnabled { get; set; }
+    public int SoftDeleteRetentionDays { get; set; } = 30;
+    public bool SoftDeleteAutoDelete { get; set; } = true;
+    public bool SoftDeleteRequireReason { get; set; }
+    public bool SoftDeleteNotifyOnPurge { get; set; }
+
+    // Features
+    public bool FeatureFullTextOcr { get; set; }
+    public bool FeatureBarcode { get; set; }
+    public bool FeatureScripts { get; set; }
+    public bool FeatureTwoFactor { get; set; }
+
+    // OCR
+    public string OcrEngine { get; set; } = "tess";
+    public int GoogleOcrQuota { get; set; }
+
+    // Session & Activity
+    public int InactivityTimeout { get; set; } = 15;
+    public int ActivityRetentionHours { get; set; } = 24;
+
+    // Processing
+    public int MaxImmediateSize { get; set; } = 10;
+    public bool SuspendProcessing { get; set; }
 }
