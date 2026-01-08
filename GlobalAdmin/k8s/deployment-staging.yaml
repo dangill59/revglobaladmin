@@ -29,8 +29,8 @@ spec:
         - name: ConnectionStrings__MongoDB
           valueFrom:
             configMapKeyRef:
-              name: rev-config
-              key: MongoDbConnectionString
+              name: mongodb
+              key: mongoDb__connectionString
         resources:
           requests:
             memory: "128Mi"
