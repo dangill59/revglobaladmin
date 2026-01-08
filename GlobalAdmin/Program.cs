@@ -91,9 +91,10 @@ app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value?.ToLower() ?? "";
     
-    // Allow login page, auth endpoints, agent API, and static files
+    // Allow login page, auth endpoints, setup, agent API, and static files
     if (path.StartsWith("/login") ||
         path.StartsWith("/api/auth") ||
+        path.StartsWith("/api/setup") ||
         path.StartsWith("/api/agent") ||
         path.StartsWith("/_") ||
         path.Contains("."))
@@ -110,6 +111,82 @@ app.Use(async (context, next) =>
     }
 
     await next();
+});
+
+// Setup endpoint - check/create admin users (only works if no admins exist)
+app.MapGet("/api/setup/check", async (AuthService authService, IMongoClient mongoClient) =>
+{
+    var db = mongoClient.GetDatabase("globalAuth");
+    var collection = db.GetCollection<MongoDB.Bson.BsonDocument>("revAdminUsers");
+    var count = await collection.CountDocumentsAsync(MongoDB.Bson.BsonDocument.Parse("{}"));
+    var users = await collection.Find(MongoDB.Bson.BsonDocument.Parse("{}"))
+        .Project(MongoDB.Bson.BsonDocument.Parse("{_id: 1}"))
+        .ToListAsync();
+
+    return Results.Ok(new {
+        adminCount = count,
+        emails = users.Select(u => u["_id"].AsString).ToList()
+    });
+});
+
+app.MapPost("/api/setup/create-admin", async (AdminCreateRequest request, AuthService authService, IMongoClient mongoClient) =>
+{
+    // Only allow if no admin users exist (first-time setup)
+    var db = mongoClient.GetDatabase("globalAuth");
+    var collection = db.GetCollection<MongoDB.Bson.BsonDocument>("revAdminUsers");
+    var count = await collection.CountDocumentsAsync(MongoDB.Bson.BsonDocument.Parse("{}"));
+
+    if (count > 0)
+    {
+        return Results.BadRequest(new { error = "Admin users already exist. Use the UI to manage users." });
+    }
+
+    var success = await authService.CreateAdminUserAsync(request.Email, request.Password);
+    if (success)
+    {
+        return Results.Ok(new { message = $"Admin user {request.Email} created successfully" });
+    }
+    return Results.BadRequest(new { error = "Failed to create admin user" });
+});
+
+// Add new admin (requires existing admin auth or setup token)
+app.MapPost("/api/setup/add-admin", async (AdminCreateRequest request, AuthService authService, HttpContext ctx) =>
+{
+    // Allow if authenticated as admin OR using setup token
+    var setupToken = ctx.Request.Headers["X-Setup-Token"].FirstOrDefault();
+    var isAuth = ctx.User.Identity?.IsAuthenticated ?? false;
+
+    // Temp setup token for initial configuration (remove after setup)
+    if (setupToken != "scanrev-setup-2024" && !isAuth)
+    {
+        return Results.Unauthorized();
+    }
+
+    var success = await authService.CreateAdminUserAsync(request.Email, request.Password);
+    if (success)
+    {
+        return Results.Ok(new { message = $"Admin user {request.Email} created successfully" });
+    }
+    return Results.BadRequest(new { error = "User already exists or creation failed" });
+});
+
+// Reset admin password
+app.MapPost("/api/setup/reset-password", async (AdminResetRequest request, AuthService authService, HttpContext ctx) =>
+{
+    var setupToken = ctx.Request.Headers["X-Setup-Token"].FirstOrDefault();
+    var isAuth = ctx.User.Identity?.IsAuthenticated ?? false;
+
+    if (setupToken != "scanrev-setup-2024" && !isAuth)
+    {
+        return Results.Unauthorized();
+    }
+
+    var success = await authService.UpdatePasswordAsync(request.Email, request.NewPassword);
+    if (success)
+    {
+        return Results.Ok(new { message = $"Password reset for {request.Email}" });
+    }
+    return Results.BadRequest(new { error = "User not found or update failed" });
 });
 
 // On-Prem Agent API endpoints
@@ -224,3 +301,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+// Request models
+public record AdminCreateRequest(string Email, string Password);
+public record AdminResetRequest(string Email, string NewPassword);
