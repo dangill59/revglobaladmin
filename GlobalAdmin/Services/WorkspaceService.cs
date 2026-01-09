@@ -8,12 +8,20 @@ public class WorkspaceService
     private readonly IMongoClient _mongoClient;
     private readonly IMongoDatabase _globalAuthDb;
     private readonly ILogger<WorkspaceService> _logger;
+    private readonly StorageCleanupService _storageService;
+    private readonly OpenSearchService _openSearchService;
 
-    public WorkspaceService(IMongoClient mongoClient, ILogger<WorkspaceService> logger)
+    public WorkspaceService(
+        IMongoClient mongoClient,
+        ILogger<WorkspaceService> logger,
+        StorageCleanupService storageService,
+        OpenSearchService openSearchService)
     {
         _mongoClient = mongoClient;
         _globalAuthDb = mongoClient.GetDatabase("globalAuth");
         _logger = logger;
+        _storageService = storageService;
+        _openSearchService = openSearchService;
     }
 
     public IMongoCollection<BsonDocument> Workspaces =>
@@ -170,6 +178,44 @@ public class WorkspaceService
             update);
 
         return result.ModifiedCount > 0;
+    }
+
+    public async Task<WorkspaceDeletionResult> DeleteWorkspaceAsync(string workspaceId)
+    {
+        var result = new WorkspaceDeletionResult { WorkspaceId = workspaceId };
+
+        try
+        {
+            // 1. Delete OpenSearch indexes
+            _logger.LogInformation("Deleting OpenSearch indexes for workspace {WorkspaceId}", workspaceId);
+            result.OpenSearchDeleted = await _openSearchService.DeleteWorkspaceIndexesAsync(workspaceId);
+
+            // 2. Delete S3 storage
+            _logger.LogInformation("Deleting S3 storage for workspace {WorkspaceId}", workspaceId);
+            result.StorageObjectsDeleted = await _storageService.DeleteWorkspaceStorageAsync(workspaceId);
+
+            // 3. Drop the workspace MongoDB database
+            var dbName = $"rev_{workspaceId}";
+            _logger.LogInformation("Dropping MongoDB database {DbName}", dbName);
+            await _mongoClient.DropDatabaseAsync(dbName);
+            result.DatabaseDropped = true;
+
+            // 4. Delete workspace document from globalAuth.workspaces
+            _logger.LogInformation("Deleting workspace document from globalAuth");
+            var deleteResult = await Workspaces.DeleteOneAsync(
+                Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(workspaceId)));
+            result.WorkspaceDocDeleted = deleteResult.DeletedCount > 0;
+
+            result.Success = true;
+            _logger.LogInformation("Successfully deleted workspace {WorkspaceId}", workspaceId);
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex.Message;
+            _logger.LogError(ex, "Error deleting workspace {WorkspaceId}", workspaceId);
+        }
+
+        return result;
     }
 
     public async Task<int> GetActiveUserCountAsync(string workspaceId)
@@ -341,4 +387,15 @@ public class WorkspaceSettings
     // Processing
     public int MaxImmediateSize { get; set; } = 10;
     public bool SuspendProcessing { get; set; }
+}
+
+public class WorkspaceDeletionResult
+{
+    public string WorkspaceId { get; set; } = "";
+    public bool Success { get; set; }
+    public bool OpenSearchDeleted { get; set; }
+    public int StorageObjectsDeleted { get; set; }
+    public bool DatabaseDropped { get; set; }
+    public bool WorkspaceDocDeleted { get; set; }
+    public string? Error { get; set; }
 }

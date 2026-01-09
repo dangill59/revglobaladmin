@@ -230,15 +230,58 @@ else
                     @if (_isDisabled)
                     {
                         <button class="btn btn-outline-success" @onclick="EnableWorkspace">Enable Workspace</button>
+                        <button class="btn btn-danger" @onclick="ShowDeleteModal">Delete Workspace</button>
                     }
                     else
                     {
                         <button class="btn btn-outline-danger" @onclick="DisableWorkspace">Disable Workspace</button>
+                        <small class="text-muted">Disable workspace first to enable deletion</small>
                     }
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Delete Confirmation Modal -->
+    @if (_showDeleteModal)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">Delete Workspace</h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="HideDeleteModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-danger">
+                            <strong>Warning!</strong> This action is permanent and cannot be undone.
+                        </div>
+                        <p>The following will be permanently deleted:</p>
+                        <ul>
+                            <li>All documents and pages in this workspace</li>
+                            <li>All images stored in cloud storage</li>
+                            <li>All search indexes</li>
+                            <li>All workspace users and settings</li>
+                        </ul>
+                        <hr />
+                        <p>To confirm, type the workspace name: <strong>@_workspaceName</strong></p>
+                        <input type="text" class="form-control" @bind="_deleteConfirmName" placeholder="Enter workspace name" />
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="HideDeleteModal" disabled="@_deleting">Cancel</button>
+                        <button type="button" class="btn btn-danger" @onclick="DeleteWorkspace"
+                                disabled="@(_deleteConfirmName != _workspaceName || _deleting)">
+                            @if (_deleting)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Delete Permanently
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -279,6 +322,11 @@ else
     // Processing
     private int _maxImmediateSize = 10;
     private bool _suspendProcessing = false;
+
+    // Delete modal
+    private bool _showDeleteModal = false;
+    private bool _deleting = false;
+    private string _deleteConfirmName = "";
 
     protected override async Task OnInitializedAsync() => await LoadWorkspace();
 
@@ -404,4 +452,47 @@ else
 
     private static bool GetBool(BsonDocument d, string f, bool def = false) =>
         d.Contains(f) && !d[f].IsBsonNull ? d[f].AsBoolean : def;
+
+    private void ShowDeleteModal()
+    {
+        _deleteConfirmName = "";
+        _showDeleteModal = true;
+    }
+
+    private void HideDeleteModal()
+    {
+        _showDeleteModal = false;
+        _deleteConfirmName = "";
+    }
+
+    private async Task DeleteWorkspace()
+    {
+        if (_deleteConfirmName != _workspaceName) return;
+
+        _deleting = true;
+        try
+        {
+            var result = await WorkspaceService.DeleteWorkspaceAsync(WorkspaceId);
+            if (result.Success)
+            {
+                Nav.NavigateTo("/workspaces?deleted=true");
+            }
+            else
+            {
+                _message = $"Error deleting workspace: {result.Error}";
+                _messageSuccess = false;
+                HideDeleteModal();
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error: {ex.Message}";
+            _messageSuccess = false;
+            HideDeleteModal();
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
 }

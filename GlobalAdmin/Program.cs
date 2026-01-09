@@ -19,6 +19,8 @@ builder.Services.AddScoped<AnalyticsService>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<OnPremService>();
+builder.Services.AddScoped<StorageCleanupService>();
+builder.Services.AddScoped<OpenSearchService>();
 
 // Add authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
