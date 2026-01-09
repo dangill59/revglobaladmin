@@ -22,15 +22,30 @@ public class OpenSearchService
             return null;
         }
 
-        var settings = new ConnectionSettings(new Uri(url))
+        var uri = new Uri(url);
+
+        // Build base URL without credentials
+        var baseUrl = $"{uri.Scheme}://{uri.Host}:{uri.Port}";
+
+        var settings = new ConnectionSettings(new Uri(baseUrl))
             .DefaultIndex("default");
 
-        // Add authentication if configured
+        // Extract credentials from URL (format: https://user:pass@host:port)
+        // Or use explicit config values if provided
         var username = _config["OpenSearch:Username"];
         var password = _config["OpenSearch:Password"];
+
+        if (string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            var userInfo = uri.UserInfo.Split(':');
+            username = userInfo[0];
+            password = userInfo.Length > 1 ? userInfo[1] : null;
+        }
+
         if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
         {
             settings = settings.BasicAuthentication(username, password);
+            _logger.LogInformation("OpenSearch configured with authentication for {Host}", uri.Host);
         }
 
         // Disable certificate validation for development (if configured)

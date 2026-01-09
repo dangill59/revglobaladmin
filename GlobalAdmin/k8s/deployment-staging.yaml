@@ -31,6 +31,40 @@ spec:
             configMapKeyRef:
               name: mongodb
               key: mongoDb__connectionString
+        # S3 Storage Config
+        - name: S3Storage__AccessKey
+          valueFrom:
+            secretKeyRef:
+              name: rev-s3-secrets
+              key: accesskey
+        - name: S3Storage__SecretKey
+          valueFrom:
+            secretKeyRef:
+              name: rev-s3-secrets
+              key: secretkey
+        - name: S3Storage__Bucket
+          valueFrom:
+            configMapKeyRef:
+              name: s3
+              key: s3Storage__bucket
+        - name: S3Storage__Region
+          valueFrom:
+            configMapKeyRef:
+              name: s3
+              key: s3Storage__region
+        - name: S3Storage__StorageRoot
+          valueFrom:
+            configMapKeyRef:
+              name: s3
+              key: s3Storage__StorageRoot
+        # OpenSearch Config
+        - name: OpenSearch__Url
+          valueFrom:
+            configMapKeyRef:
+              name: elasticsearch
+              key: elasticsearch__nodes__0
+        - name: OpenSearch__DisableCertificateValidation
+          value: "true"
         resources:
           requests:
             memory: "128Mi"
