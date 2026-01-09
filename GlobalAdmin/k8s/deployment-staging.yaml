@@ -65,6 +65,42 @@ spec:
               key: elasticsearch__nodes__0
         - name: OpenSearch__DisableCertificateValidation
           value: "true"
+        # SMTP/Email Config
+        - name: MailSettings__SmtpHost
+          valueFrom:
+            configMapKeyRef:
+              name: mailsettings
+              key: mailSettings__smtpHost
+        - name: MailSettings__SmtpPort
+          valueFrom:
+            configMapKeyRef:
+              name: mailsettings
+              key: mailSettings__smtpPort
+        - name: MailSettings__UseTls
+          valueFrom:
+            configMapKeyRef:
+              name: mailsettings
+              key: mailSettings__useTLS
+        - name: MailSettings__Username
+          valueFrom:
+            configMapKeyRef:
+              name: mailsettings
+              key: mailSettings__userName
+        - name: MailSettings__Password
+          valueFrom:
+            secretKeyRef:
+              name: globaladmin-smtp
+              key: password
+        - name: MailSettings__FromEmail
+          valueFrom:
+            configMapKeyRef:
+              name: mailsettings
+              key: mailSettings__defaultMailFromEmail
+        - name: MailSettings__FromName
+          valueFrom:
+            configMapKeyRef:
+              name: mailsettings
+              key: mailSettings__defaultMailFromName
         resources:
           requests:
             memory: "128Mi"

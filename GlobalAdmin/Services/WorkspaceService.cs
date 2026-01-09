@@ -10,18 +10,24 @@ public class WorkspaceService
     private readonly ILogger<WorkspaceService> _logger;
     private readonly StorageCleanupService _storageService;
     private readonly OpenSearchService _openSearchService;
+    private readonly EmailService _emailService;
+    private readonly IConfiguration _config;
 
     public WorkspaceService(
         IMongoClient mongoClient,
         ILogger<WorkspaceService> logger,
         StorageCleanupService storageService,
-        OpenSearchService openSearchService)
+        OpenSearchService openSearchService,
+        EmailService emailService,
+        IConfiguration config)
     {
         _mongoClient = mongoClient;
         _globalAuthDb = mongoClient.GetDatabase("globalAuth");
         _logger = logger;
         _storageService = storageService;
         _openSearchService = openSearchService;
+        _emailService = emailService;
+        _config = config;
     }
 
     public IMongoCollection<BsonDocument> Workspaces =>
@@ -71,6 +77,10 @@ public class WorkspaceService
         var ownerUser = await allUsersCollection.Find(
             Builders<BsonDocument>.Filter.Eq("emailaddress", ownerEmail)).FirstOrDefaultAsync();
 
+        // Generate reset PIN for new user
+        var resetPin = new Random().Next(10000, 99999).ToString();
+        var isNewUser = ownerUser == null;
+
         if (ownerUser == null)
         {
             ownerUser = new BsonDocument
@@ -79,16 +89,36 @@ public class WorkspaceService
                 { "emailaddress", ownerEmail },
                 { "preferredName", ownerEmail.Split('@')[0] },
                 { "pwdDigest", "" },
+                { "resetPin", resetPin },
                 { "isDisabled", false },
                 { "created", DateTime.UtcNow },
                 { "modified", DateTime.UtcNow }
             };
             await allUsersCollection.InsertOneAsync(ownerUser);
-            _logger.LogInformation("Created owner user: {Email}", ownerEmail);
+            _logger.LogInformation("Created owner user: {Email} with reset PIN", ownerEmail);
+        }
+        else
+        {
+            // User exists - set reset PIN so they can set a new password
+            var update = Builders<BsonDocument>.Update
+                .Set("resetPin", resetPin)
+                .Set("modified", DateTime.UtcNow);
+            await allUsersCollection.UpdateOneAsync(
+                Builders<BsonDocument>.Filter.Eq("emailaddress", ownerEmail),
+                update);
+            _logger.LogInformation("Set reset PIN for existing user: {Email}", ownerEmail);
         }
 
         // 4. Provision the workspace database with required collections
         await ProvisionWorkspaceDatabaseAsync(workspaceId, ownerEmail);
+
+        // 5. Send welcome email with login instructions
+        var loginUrl = $"https://{name}.sonopaper.com";
+        var emailSent = await _emailService.SendWelcomeEmailAsync(ownerEmail, name, resetPin, loginUrl);
+        if (emailSent)
+        {
+            _logger.LogInformation("Welcome email sent to {Email} for workspace {Workspace}", ownerEmail, name);
+        }
 
         return workspace;
     }
