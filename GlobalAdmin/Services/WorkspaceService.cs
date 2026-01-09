@@ -248,31 +248,57 @@ public class WorkspaceService
             { "notifyOnPurge", settings.SoftDeleteNotifyOnPurge }
         };
 
-        var update = Builders<BsonDocument>.Update
-            // Soft Delete
+        var filter = Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(workspaceId));
+
+        // Build update with sets
+        var updateBuilder = Builders<BsonDocument>.Update
             .Set("softDeleteConfig", softDeleteConfig)
-            // Features
-            .Set("features.fullTextOCR.count", settings.FeatureFullTextOcr ? 1 : 0)
-            .Set("features.fullTextOCR.config.ocrEngine", settings.OcrEngine)
-            .Set("features.barcode.count", settings.FeatureBarcode ? 1 : 0)
-            .Set("features.scripts.count", settings.FeatureScripts ? 1 : 0)
-            .Set("features.twofactorAuth.count", settings.FeatureTwoFactor ? 1 : 0)
-            // Quotas
             .Set("quotas.googleOCR.limit", settings.GoogleOcrQuota)
-            // Session & Activity
             .Set("inactivityTimeoutMin", settings.InactivityTimeout)
             .Set("activityRetentionHours", settings.ActivityRetentionHours)
-            // Processing
             .Set("maxImmediatePageProcessingSize", settings.MaxImmediateSize)
             .Set("suspendBackGroundImageProcessing", settings.SuspendProcessing)
             .Set("modified", DateTime.UtcNow);
 
-        var result = await Workspaces.UpdateOneAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(workspaceId)),
-            update);
+        // Features need to be SET when enabled or UNSET when disabled
+        // Because the app checks ContainsKey(), not the count value
+        var updates = new List<UpdateDefinition<BsonDocument>> { updateBuilder };
 
-        _logger.LogInformation("Updated workspace settings for {WorkspaceId}: SoftDelete={SoftDelete}, FullTextOCR={FullText}",
-            workspaceId, settings.SoftDeleteEnabled, settings.FeatureFullTextOcr);
+        // Full-Text OCR - special handling: always set config, toggle count
+        if (settings.FeatureFullTextOcr)
+        {
+            updates.Add(Builders<BsonDocument>.Update
+                .Set("features.fullTextOCR.count", 1)
+                .Set("features.fullTextOCR.config.ocrEngine", settings.OcrEngine));
+        }
+        else
+        {
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.fullTextOCR"));
+        }
+
+        // Barcode
+        if (settings.FeatureBarcode)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.barcode.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.barcode"));
+
+        // Scripts
+        if (settings.FeatureScripts)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.scripts.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.scripts"));
+
+        // Two-Factor Auth - MUST unset key entirely to disable
+        if (settings.FeatureTwoFactor)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.twofactorAuth.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.twofactorAuth"));
+
+        var combinedUpdate = Builders<BsonDocument>.Update.Combine(updates);
+        var result = await Workspaces.UpdateOneAsync(filter, combinedUpdate);
+
+        _logger.LogInformation("Updated workspace settings for {WorkspaceId}: SoftDelete={SoftDelete}, TwoFactor={TwoFactor}, FullTextOCR={FullText}",
+            workspaceId, settings.SoftDeleteEnabled, settings.FeatureTwoFactor, settings.FeatureFullTextOcr);
 
         return result.ModifiedCount > 0;
     }
