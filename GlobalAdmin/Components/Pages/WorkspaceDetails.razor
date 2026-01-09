@@ -250,33 +250,136 @@ else
                 <div class="modal-content">
                     <div class="modal-header bg-danger text-white">
                         <h5 class="modal-title">Delete Workspace</h5>
-                        <button type="button" class="btn-close btn-close-white" @onclick="HideDeleteModal"></button>
+                        @if (!_deleting && _deleteResult == null)
+                        {
+                            <button type="button" class="btn-close btn-close-white" @onclick="HideDeleteModal"></button>
+                        }
                     </div>
                     <div class="modal-body">
-                        <div class="alert alert-danger">
-                            <strong>Warning!</strong> This action is permanent and cannot be undone.
-                        </div>
-                        <p>The following will be permanently deleted:</p>
-                        <ul>
-                            <li>All documents and pages in this workspace</li>
-                            <li>All images stored in cloud storage</li>
-                            <li>All search indexes</li>
-                            <li>All workspace users and settings</li>
-                        </ul>
-                        <hr />
-                        <p>To confirm, type the workspace name: <strong>@_workspaceName</strong></p>
-                        <input type="text" class="form-control" @bind="_deleteConfirmName" placeholder="Enter workspace name" />
+                        @if (_deleteResult != null)
+                        {
+                            <!-- Show Results -->
+                            @if (_deleteResult.Success)
+                            {
+                                <div class="alert alert-success">
+                                    <strong>Workspace deleted successfully!</strong>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="alert alert-danger">
+                                    <strong>Deletion failed:</strong> @_deleteResult.Error
+                                </div>
+                            }
+                            <h6>Deletion Summary:</h6>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <td>OpenSearch Indexes</td>
+                                        <td>
+                                            @if (_deleteResult.OpenSearchDeleted)
+                                            {
+                                                <span class="badge bg-success">Deleted</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Skipped (not configured)</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>S3 Storage Objects</td>
+                                        <td>
+                                            @if (_deleteResult.StorageObjectsDeleted > 0)
+                                            {
+                                                <span class="badge bg-success">@_deleteResult.StorageObjectsDeleted deleted</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">0 (none found or not configured)</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>MongoDB Database</td>
+                                        <td>
+                                            @if (_deleteResult.DatabaseDropped)
+                                            {
+                                                <span class="badge bg-success">Dropped</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">Failed</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>Workspace Document</td>
+                                        <td>
+                                            @if (_deleteResult.WorkspaceDocDeleted)
+                                            {
+                                                <span class="badge bg-success">Deleted</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">Failed</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        }
+                        else if (_deleting)
+                        {
+                            <!-- Show Progress -->
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-danger mb-3" role="status">
+                                    <span class="visually-hidden">Deleting...</span>
+                                </div>
+                                <p class="mb-1"><strong>@_deleteStep</strong></p>
+                                <small class="text-muted">Please wait, this may take a moment...</small>
+                            </div>
+                        }
+                        else
+                        {
+                            <!-- Show Confirmation -->
+                            <div class="alert alert-danger">
+                                <strong>Warning!</strong> This action is permanent and cannot be undone.
+                            </div>
+                            <p>The following will be permanently deleted:</p>
+                            <ul>
+                                <li>All documents and pages in this workspace</li>
+                                <li>All images stored in cloud storage (S3)</li>
+                                <li>All search indexes (OpenSearch)</li>
+                                <li>All workspace users and settings</li>
+                            </ul>
+                            <hr />
+                            <p>To confirm, type the workspace name: <strong>@_workspaceName</strong></p>
+                            <input type="text" class="form-control" @bind="_deleteConfirmName" placeholder="Enter workspace name" />
+                        }
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="HideDeleteModal" disabled="@_deleting">Cancel</button>
-                        <button type="button" class="btn btn-danger" @onclick="DeleteWorkspace"
-                                disabled="@(_deleteConfirmName != _workspaceName || _deleting)">
-                            @if (_deleting)
+                        @if (_deleteResult != null)
+                        {
+                            @if (_deleteResult.Success)
                             {
-                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <button type="button" class="btn btn-primary" @onclick="@(() => Nav.NavigateTo("/workspaces"))">
+                                    Return to Workspaces
+                                </button>
                             }
-                            Delete Permanently
-                        </button>
+                            else
+                            {
+                                <button type="button" class="btn btn-secondary" @onclick="HideDeleteModal">Close</button>
+                            }
+                        }
+                        else if (!_deleting)
+                        {
+                            <button type="button" class="btn btn-secondary" @onclick="HideDeleteModal">Cancel</button>
+                            <button type="button" class="btn btn-danger" @onclick="DeleteWorkspace"
+                                    disabled="@(_deleteConfirmName != _workspaceName)">
+                                Delete Permanently
+                            </button>
+                        }
                     </div>
                 </div>
             </div>
@@ -327,6 +430,8 @@ else
     private bool _showDeleteModal = false;
     private bool _deleting = false;
     private string _deleteConfirmName = "";
+    private string _deleteStep = "";
+    private WorkspaceDeletionResult? _deleteResult = null;
 
     protected override async Task OnInitializedAsync() => await LoadWorkspace();
 
@@ -463,6 +568,8 @@ else
     {
         _showDeleteModal = false;
         _deleteConfirmName = "";
+        _deleteStep = "";
+        _deleteResult = null;
     }
 
     private async Task DeleteWorkspace()
@@ -470,25 +577,21 @@ else
         if (_deleteConfirmName != _workspaceName) return;
 
         _deleting = true;
+        _deleteStep = "Deleting workspace data...";
+        StateHasChanged();
+
         try
         {
-            var result = await WorkspaceService.DeleteWorkspaceAsync(WorkspaceId);
-            if (result.Success)
-            {
-                Nav.NavigateTo("/workspaces?deleted=true");
-            }
-            else
-            {
-                _message = $"Error deleting workspace: {result.Error}";
-                _messageSuccess = false;
-                HideDeleteModal();
-            }
+            _deleteResult = await WorkspaceService.DeleteWorkspaceAsync(WorkspaceId);
         }
         catch (Exception ex)
         {
-            _message = $"Error: {ex.Message}";
-            _messageSuccess = false;
-            HideDeleteModal();
+            _deleteResult = new WorkspaceDeletionResult
+            {
+                WorkspaceId = WorkspaceId,
+                Success = false,
+                Error = ex.Message
+            };
         }
         finally
         {
