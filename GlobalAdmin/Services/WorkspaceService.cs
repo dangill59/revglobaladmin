@@ -305,6 +305,19 @@ public class WorkspaceService
         return id.ToString() ?? "";
     }
 
+    public async Task ResetMaxImmediatePageProcessingSizeAsync(string workspaceId)
+    {
+        var update = Builders<BsonDocument>.Update
+            .Unset("maxImmediatePageProcessingSize")
+            .Set("modified", DateTime.UtcNow);
+
+        await Workspaces.UpdateOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(workspaceId)),
+            update);
+
+        _logger.LogInformation("Reset maxImmediatePageProcessingSize for workspace {WorkspaceId}", workspaceId);
+    }
+
     public async Task<bool> UpdateFeaturesAsync(string workspaceId, WorkspaceFeatures features)
     {
         // Convert MaxImmediateSize from MB to bytes (0 means use default 50MB)

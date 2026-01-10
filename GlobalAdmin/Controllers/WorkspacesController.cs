@@ -218,6 +218,21 @@ public class WorkspacesController : ControllerBase
             isAdmin = WorkspaceService.GetBool(u, "isAdmin")
         }));
     }
+
+    [HttpPost("{id}/fix-processing-size")]
+    public async Task<IActionResult> FixProcessingSize(string id)
+    {
+        try
+        {
+            // Reset maxImmediatePageProcessingSize to 0 (use default 50MB)
+            await _workspaceService.ResetMaxImmediatePageProcessingSizeAsync(id);
+            return Ok(new { message = "Reset maxImmediatePageProcessingSize to default (50MB)" });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
 }
 
 public record CreateWorkspaceRequest(string Name, string OwnerEmail, int MaxUsers = 5);
