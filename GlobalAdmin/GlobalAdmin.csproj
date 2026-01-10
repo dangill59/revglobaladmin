@@ -4,6 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <SpaRoot>ClientApp\</SpaRoot>
+    <SpaProxyServerUrl>http://localhost:5173</SpaProxyServerUrl>
   </PropertyGroup>
 
   <!-- Reference shared libraries from rev repo -->
@@ -17,7 +19,15 @@
     <PackageReference Include="AWSSDK.S3" Version="3.7.400" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.19.1" />
     <PackageReference Include="MailKit" Version="4.14.1" />
+    <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="8.0.11" />
     <PackageReference Include="OpenSearch.Client" Version="1.8.0" />
+  </ItemGroup>
+
+  <!-- Don't include ClientApp in publish - handled separately -->
+  <ItemGroup>
+    <Content Remove="$(SpaRoot)**" />
+    <None Remove="$(SpaRoot)**" />
+    <None Include="$(SpaRoot)**" Exclude="$(SpaRoot)node_modules\**" />
   </ItemGroup>
 
 </Project>

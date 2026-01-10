@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authentication;
-using GlobalAdmin.Components;
 using GlobalAdmin.Models;
 using GlobalAdmin.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -34,44 +33,62 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "GlobalAdmin.Auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Events.OnRedirectToLogin = context =>
+        {
+            // Return 401 for API requests instead of redirect
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = 401;
+                return Task.CompletedTask;
+            }
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
     });
 
 builder.Services.AddAuthorization();
 
-// Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+// Add MVC controllers
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
+    app.UseExceptionHandler("/Error");
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
+
+// Serve static files from wwwroot (React build output)
 app.UseStaticFiles();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseAntiforgery();
+// Map API controllers
+app.MapControllers();
 
-// Auth endpoints
-app.MapGet("/api/auth/login", async (string email, string? returnUrl, HttpContext ctx, AuthService authService) =>
+// Auth endpoints (minimal API for login/logout)
+app.MapPost("/api/auth/login", async (LoginRequest request, HttpContext ctx, AuthService authService) =>
 {
-    // Verify user is admin (already validated password in the form)
-    if (!await authService.IsAdminUserAsync(email))
+    var valid = await authService.ValidateCredentialsAsync(request.Email, request.Password);
+    if (!valid)
     {
-        return Results.Redirect("/login?error=invalid");
+        return Results.Unauthorized();
+    }
+
+    if (!await authService.IsAdminUserAsync(request.Email))
+    {
+        return Results.Json(new { error = "User is not an admin" }, statusCode: 403);
     }
 
     var claims = new List<Claim>
     {
-        new(ClaimTypes.Email, email),
-        new(ClaimTypes.Name, email),
+        new(ClaimTypes.Email, request.Email),
+        new(ClaimTypes.Name, request.Email),
         new(ClaimTypes.Role, "Admin")
     };
 
@@ -80,40 +97,24 @@ app.MapGet("/api/auth/login", async (string email, string? returnUrl, HttpContex
 
     await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
 
-    return Results.Redirect(returnUrl ?? "/");
+    return Results.Ok(new { email = request.Email });
 });
 
-app.MapGet("/api/auth/logout", async (HttpContext ctx) =>
+app.MapPost("/api/auth/logout", async (HttpContext ctx) =>
 {
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/login");
+    return Results.Ok();
 });
 
-// Redirect unauthenticated users to login (except for login page and static files)
-app.Use(async (context, next) =>
+app.MapGet("/api/auth/me", (HttpContext ctx) =>
 {
-    var path = context.Request.Path.Value?.ToLower() ?? "";
-    
-    // Allow login page, auth endpoints, setup, agent API, and static files
-    if (path.StartsWith("/login") ||
-        path.StartsWith("/api/auth") ||
-        path.StartsWith("/api/setup") ||
-        path.StartsWith("/api/agent") ||
-        path.StartsWith("/_") ||
-        path.Contains("."))
+    if (ctx.User.Identity?.IsAuthenticated != true)
     {
-        await next();
-        return;
+        return Results.Unauthorized();
     }
 
-    // Check if authenticated
-    if (!context.User.Identity?.IsAuthenticated ?? true)
-    {
-        context.Response.Redirect($"/login?returnUrl={Uri.EscapeDataString(context.Request.Path)}");
-        return;
-    }
-
-    await next();
+    var email = ctx.User.FindFirst(ClaimTypes.Email)?.Value;
+    return Results.Ok(new { email });
 });
 
 // Setup endpoint - check/create admin users (only works if no admins exist)
@@ -300,11 +301,12 @@ app.MapPost("/api/agent/command/{commandId}/ack", async (string commandId, HttpC
     return Results.Ok();
 });
 
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+// SPA fallback - serve index.html for all non-API routes
+app.MapFallbackToFile("index.html");
 
 app.Run();
 
 // Request models
+public record LoginRequest(string Email, string Password);
 public record AdminCreateRequest(string Email, string Password);
 public record AdminResetRequest(string Email, string NewPassword);

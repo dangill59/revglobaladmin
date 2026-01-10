@@ -291,7 +291,12 @@ public class WorkspaceService
 
     public static string GetId(BsonDocument doc)
     {
-        return doc["_id"].AsObjectId.ToString();
+        var id = doc["_id"];
+        if (id.IsObjectId)
+            return id.AsObjectId.ToString();
+        if (id.IsString)
+            return id.AsString;
+        return id.ToString() ?? "";
     }
 
     public async Task<bool> UpdateFeaturesAsync(string workspaceId, WorkspaceFeatures features)
@@ -315,42 +320,24 @@ public class WorkspaceService
 
     public async Task<bool> UpdateWorkspaceSettingsAsync(string workspaceId, WorkspaceSettings settings)
     {
-        var softDeleteConfig = new BsonDocument
-        {
-            { "enabled", settings.SoftDeleteEnabled },
-            { "retentionDays", settings.SoftDeleteRetentionDays },
-            { "autoDeleteEnabled", settings.SoftDeleteAutoDelete },
-            { "requireReasonOnDelete", settings.SoftDeleteRequireReason },
-            { "notifyOnPurge", settings.SoftDeleteNotifyOnPurge }
-        };
-
         var filter = Builders<BsonDocument>.Filter.Eq("_id", new ObjectId(workspaceId));
 
-        // Build update with sets
+        // GlobalAdmin only sets license count and feature toggles
+        // Configuration options are managed by workspace admins
         var updateBuilder = Builders<BsonDocument>.Update
-            .Set("softDeleteConfig", softDeleteConfig)
-            .Set("quotas.googleOCR.limit", settings.GoogleOcrQuota)
-            .Set("inactivityTimeoutMin", settings.InactivityTimeout)
-            .Set("activityRetentionHours", settings.ActivityRetentionHours)
-            .Set("maxImmediatePageProcessingSize", settings.MaxImmediateSize)
-            .Set("suspendBackGroundImageProcessing", settings.SuspendProcessing)
+            .Set("maxUsers", settings.MaxUsers)
             .Set("modified", DateTime.UtcNow);
 
-        // Features need to be SET when enabled or UNSET when disabled
-        // Because the app checks ContainsKey(), not the count value
         var updates = new List<UpdateDefinition<BsonDocument>> { updateBuilder };
 
-        // Full-Text OCR - special handling: always set config, toggle count
+        // Feature toggles - SET when enabled, UNSET when disabled
+        // (app checks ContainsKey() to determine if feature is enabled)
+
+        // Full-Text OCR
         if (settings.FeatureFullTextOcr)
-        {
-            updates.Add(Builders<BsonDocument>.Update
-                .Set("features.fullTextOCR.count", 1)
-                .Set("features.fullTextOCR.config.ocrEngine", settings.OcrEngine));
-        }
+            updates.Add(Builders<BsonDocument>.Update.Set("features.fullTextOCR.count", 1));
         else
-        {
             updates.Add(Builders<BsonDocument>.Update.Unset("features.fullTextOCR"));
-        }
 
         // Barcode
         if (settings.FeatureBarcode)
@@ -364,17 +351,35 @@ public class WorkspaceService
         else
             updates.Add(Builders<BsonDocument>.Update.Unset("features.scripts"));
 
-        // Two-Factor Auth - MUST unset key entirely to disable
+        // Two-Factor Auth
         if (settings.FeatureTwoFactor)
             updates.Add(Builders<BsonDocument>.Update.Set("features.twofactorAuth.count", 1));
         else
             updates.Add(Builders<BsonDocument>.Update.Unset("features.twofactorAuth"));
 
+        // Soft Delete
+        if (settings.SoftDeleteEnabled)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.softDelete.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.softDelete"));
+
+        // Custom Branding
+        if (settings.CustomBrandingEnabled)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.customBranding.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.customBranding"));
+
+        // Audit Logs
+        if (settings.AuditLogsEnabled)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.auditLogs.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.auditLogs"));
+
         var combinedUpdate = Builders<BsonDocument>.Update.Combine(updates);
         var result = await Workspaces.UpdateOneAsync(filter, combinedUpdate);
 
-        _logger.LogInformation("Updated workspace settings for {WorkspaceId}: SoftDelete={SoftDelete}, TwoFactor={TwoFactor}, FullTextOCR={FullText}",
-            workspaceId, settings.SoftDeleteEnabled, settings.FeatureTwoFactor, settings.FeatureFullTextOcr);
+        _logger.LogInformation("Updated workspace features for {WorkspaceId}: MaxUsers={MaxUsers}, SoftDelete={SoftDelete}, TwoFactor={TwoFactor}, FullTextOCR={FullText}, Branding={Branding}",
+            workspaceId, settings.MaxUsers, settings.SoftDeleteEnabled, settings.FeatureTwoFactor, settings.FeatureFullTextOcr, settings.CustomBrandingEnabled);
 
         return result.ModifiedCount > 0;
     }
@@ -393,6 +398,9 @@ public class WorkspaceFeatures
 
 public class WorkspaceSettings
 {
+    // License
+    public int MaxUsers { get; set; } = 5;
+
     // Soft Delete
     public bool SoftDeleteEnabled { get; set; }
     public int SoftDeleteRetentionDays { get; set; } = 30;
@@ -405,6 +413,7 @@ public class WorkspaceSettings
     public bool FeatureBarcode { get; set; }
     public bool FeatureScripts { get; set; }
     public bool FeatureTwoFactor { get; set; }
+    public bool AuditLogsEnabled { get; set; }
 
     // OCR
     public string OcrEngine { get; set; } = "tess";
@@ -417,6 +426,11 @@ public class WorkspaceSettings
     // Processing
     public int MaxImmediateSize { get; set; } = 10;
     public bool SuspendProcessing { get; set; }
+
+    // Custom Branding
+    public bool CustomBrandingEnabled { get; set; }
+    public string? BrandingLogoUrl { get; set; }
+    public string? BrandingPrimaryColor { get; set; }
 }
 
 public class WorkspaceDeletionResult
