@@ -212,9 +212,11 @@ public class WorkspacesController : ControllerBase
         return Ok(users.Select(u => new
         {
             id = WorkspaceService.GetId(u),
-            userName = WorkspaceService.GetString(u, "userName"),
-            emailAddress = WorkspaceService.GetString(u, "emailAddress"),
-            preferredName = WorkspaceService.GetString(u, "preferredName"),
+            // Handle both old (userId) and new (userName/emailAddress) field names
+            userName = WorkspaceService.GetString(u, "userName", WorkspaceService.GetString(u, "userId")),
+            emailAddress = WorkspaceService.GetString(u, "emailAddress", WorkspaceService.GetString(u, "userId")),
+            // Handle both old (fullName) and new (preferredName) field names
+            preferredName = WorkspaceService.GetString(u, "preferredName", WorkspaceService.GetString(u, "fullName")),
             isAdmin = WorkspaceService.GetBool(u, "isAdmin")
         }));
     }
