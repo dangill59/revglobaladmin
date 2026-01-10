@@ -36,7 +36,7 @@ export interface WorkspaceDetails extends Workspace {
     googleOcrQuota: number;
     inactivityTimeout: number;
     activityRetentionHours: number;
-    maxImmediateSize: number;
+    maxImmediateSizeMB: number;
     suspendProcessing: boolean;
     customBrandingEnabled: boolean;
     brandingLogoUrl: string;
@@ -128,7 +128,7 @@ export interface WorkspaceSettings {
   // Processing
   inactivityTimeout?: number;
   activityRetentionHours?: number;
-  maxImmediateSize?: number;
+  maxImmediateSizeMB?: number;
   suspendProcessing?: boolean;
   // Custom Branding
   customBrandingEnabled?: boolean;

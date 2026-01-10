@@ -284,6 +284,12 @@ public class WorkspaceService
         return doc[field].IsInt32 ? doc[field].AsInt32 : (int)doc[field].AsInt64;
     }
 
+    public static long GetLong(BsonDocument doc, string field, long defaultValue = 0)
+    {
+        if (!doc.Contains(field) || doc[field].IsBsonNull) return defaultValue;
+        return doc[field].IsInt64 ? doc[field].AsInt64 : doc[field].AsInt32;
+    }
+
     public static bool GetBool(BsonDocument doc, string field, bool defaultValue = false)
     {
         return doc.Contains(field) && !doc[field].IsBsonNull ? doc[field].AsBoolean : defaultValue;
@@ -301,13 +307,18 @@ public class WorkspaceService
 
     public async Task<bool> UpdateFeaturesAsync(string workspaceId, WorkspaceFeatures features)
     {
+        // Convert MaxImmediateSize from MB to bytes (0 means use default 50MB)
+        var maxImmediateSizeBytes = features.MaxImmediateSize > 0
+            ? features.MaxImmediateSize * 1024L * 1024L
+            : 0L;
+
         var update = Builders<BsonDocument>.Update
             .Set("features.fullTextOCR.config.ocrEngine", features.OcrEngine)
             .Set("features.barcode.count", features.BarcodeEnabled ? 1 : 0)
             .Set("features.scripts.count", features.ScriptsEnabled ? 1 : 0)
             .Set("quotas.googleOCR.limit", features.GoogleOcrLimit)
             .Set("suspendBackGroundImageProcessing", features.SuspendProcessing)
-            .Set("maxImmediatePageProcessingSize", features.MaxImmediateSize)
+            .Set("maxImmediatePageProcessingSize", maxImmediateSizeBytes)
             .Set("inactivityTimeoutMin", features.InactivityTimeout)
             .Set("modified", DateTime.UtcNow);
 
@@ -329,6 +340,24 @@ public class WorkspaceService
             .Set("modified", DateTime.UtcNow);
 
         var updates = new List<UpdateDefinition<BsonDocument>> { updateBuilder };
+
+        // Fix maxImmediatePageProcessingSize if it's set to a problematic value
+        // Value should be in bytes - 0 means use default (50MB), otherwise it's bytes
+        // Convert from MB if provided, or set to 0 to use default
+        if (settings.MaxImmediateSizeMB.HasValue)
+        {
+            if (settings.MaxImmediateSizeMB.Value == 0)
+            {
+                // Unset to use default (50MB)
+                updates.Add(Builders<BsonDocument>.Update.Unset("maxImmediatePageProcessingSize"));
+            }
+            else
+            {
+                // Convert MB to bytes
+                var sizeInBytes = settings.MaxImmediateSizeMB.Value * 1024L * 1024L;
+                updates.Add(Builders<BsonDocument>.Update.Set("maxImmediatePageProcessingSize", sizeInBytes));
+            }
+        }
 
         // Feature toggles - SET when enabled, UNSET when disabled
         // (app checks ContainsKey() to determine if feature is enabled)
@@ -424,7 +453,7 @@ public class WorkspaceSettings
     public int ActivityRetentionHours { get; set; } = 24;
 
     // Processing
-    public int MaxImmediateSize { get; set; } = 10;
+    public int? MaxImmediateSizeMB { get; set; }  // In MB, null means don't update, 0 means use default (50MB)
     public bool SuspendProcessing { get; set; }
 
     // Custom Branding

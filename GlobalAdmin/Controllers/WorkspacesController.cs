@@ -114,8 +114,10 @@ public class WorkspacesController : ControllerBase
                 inactivityTimeout = WorkspaceService.GetInt(workspace, "inactivityTimeoutMin", 15),
                 activityRetentionHours = WorkspaceService.GetInt(workspace, "activityRetentionHours", 24),
 
-                // Processing
-                maxImmediateSize = WorkspaceService.GetInt(workspace, "maxImmediatePageProcessingSize", 10),
+                // Processing - value stored in bytes, display in MB (default 50MB)
+                maxImmediateSizeMB = WorkspaceService.GetLong(workspace, "maxImmediatePageProcessingSize", 0) > 0
+                    ? (int)(WorkspaceService.GetLong(workspace, "maxImmediatePageProcessingSize", 0) / (1024 * 1024))
+                    : 50,
                 suspendProcessing = WorkspaceService.GetBool(workspace, "suspendBackGroundImageProcessing"),
 
                 // Custom Branding
