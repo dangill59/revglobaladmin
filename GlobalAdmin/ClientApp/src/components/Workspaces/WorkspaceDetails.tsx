@@ -21,6 +21,7 @@ export default function WorkspaceDetails() {
   const [users, setUsers] = useState<WorkspaceUser[]>([]);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
   const [settings, setSettings] = useState<WorkspaceSettings>({});
 
   useEffect(() => {
@@ -85,6 +86,19 @@ export default function WorkspaceDetails() {
     }
   };
 
+  const handleReindex = async () => {
+    if (!id) return;
+    setReindexing(true);
+    try {
+      const res = await workspacesApi.triggerReindex(id);
+      alert(res.data.message);
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to trigger reindex');
+    } finally {
+      setReindexing(false);
+    }
+  };
+
   if (loading || !workspace) {
     return (
       <div className="d-flex justify-content-center p-5">
@@ -107,6 +121,14 @@ export default function WorkspaceDetails() {
           <small className="text-muted">{workspace.ownerUser}</small>
         </div>
         <div>
+          <Button
+            variant="info"
+            className="me-2"
+            onClick={handleReindex}
+            disabled={reindexing}
+          >
+            {reindexing ? 'Triggering...' : 'Trigger Reindex'}
+          </Button>
           <Button
             variant={workspace.isDisabled ? 'success' : 'warning'}
             className="me-2"

@@ -21,6 +21,7 @@ builder.Services.AddScoped<OnPremService>();
 builder.Services.AddScoped<StorageCleanupService>();
 builder.Services.AddScoped<OpenSearchService>();
 builder.Services.AddScoped<EmailService>();
+builder.Services.AddScoped<RabbitMQService>();
 
 // Add authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

@@ -12,15 +12,18 @@ public class WorkspacesController : ControllerBase
 {
     private readonly WorkspaceService _workspaceService;
     private readonly AnalyticsService _analyticsService;
+    private readonly RabbitMQService _rabbitMQService;
     private readonly ILogger<WorkspacesController> _logger;
 
     public WorkspacesController(
         WorkspaceService workspaceService,
         AnalyticsService analyticsService,
+        RabbitMQService rabbitMQService,
         ILogger<WorkspacesController> logger)
     {
         _workspaceService = workspaceService;
         _analyticsService = analyticsService;
+        _rabbitMQService = rabbitMQService;
         _logger = logger;
     }
 
@@ -67,6 +70,10 @@ public class WorkspacesController : ControllerBase
         // Extract soft delete config
         var softDeleteConfig = workspace.Contains("softDeleteConfig") && workspace["softDeleteConfig"].IsBsonDocument
             ? workspace["softDeleteConfig"].AsBsonDocument : new BsonDocument();
+
+        // Extract audit config
+        var auditConfig = workspace.Contains("auditConfig") && workspace["auditConfig"].IsBsonDocument
+            ? workspace["auditConfig"].AsBsonDocument : new BsonDocument();
 
         return Ok(new
         {
@@ -127,8 +134,8 @@ public class WorkspacesController : ControllerBase
                 brandingPrimaryColor = workspace.Contains("branding") && workspace["branding"].IsBsonDocument
                     ? WorkspaceService.GetString(workspace["branding"].AsBsonDocument, "primaryColor", "#0d6efd") : "#0d6efd",
 
-                // Audit Logs
-                auditLogsEnabled = features.Contains("auditLogs")
+                // Audit Logs - check auditConfig.enabled (the field the app actually uses)
+                auditLogsEnabled = auditConfig.Contains("enabled") && auditConfig["enabled"].AsBoolean
             }
         });
     }
@@ -232,6 +239,26 @@ public class WorkspacesController : ControllerBase
         }
         catch (Exception ex)
         {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("{id}/reindex")]
+    public async Task<IActionResult> TriggerReindex(string id)
+    {
+        try
+        {
+            var success = await _rabbitMQService.TriggerReindexAsync(id);
+            if (success)
+            {
+                _logger.LogInformation("Triggered reindex for workspace {WorkspaceId}", id);
+                return Ok(new { message = "Reindex triggered successfully. Documents will be indexed in the background." });
+            }
+            return BadRequest(new { error = "Failed to trigger reindex. Check RabbitMQ connection." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to trigger reindex for workspace {WorkspaceId}", id);
             return BadRequest(new { error = ex.Message });
         }
     }

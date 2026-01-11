@@ -411,11 +411,18 @@ public class WorkspaceService
         else
             updates.Add(Builders<BsonDocument>.Update.Unset("features.customBranding"));
 
-        // Audit Logs
+        // Audit Logs - set both the feature flag and the auditConfig.enabled field
+        // The app checks auditConfig.enabled, not features.auditLogs
         if (settings.AuditLogsEnabled)
+        {
             updates.Add(Builders<BsonDocument>.Update.Set("features.auditLogs.count", 1));
+            updates.Add(Builders<BsonDocument>.Update.Set("auditConfig.enabled", true));
+        }
         else
+        {
             updates.Add(Builders<BsonDocument>.Update.Unset("features.auditLogs"));
+            updates.Add(Builders<BsonDocument>.Update.Set("auditConfig.enabled", false));
+        }
 
         var combinedUpdate = Builders<BsonDocument>.Update.Combine(updates);
         var result = await Workspaces.UpdateOneAsync(filter, combinedUpdate);

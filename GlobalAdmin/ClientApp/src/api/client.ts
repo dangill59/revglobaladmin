@@ -44,7 +44,8 @@ export const workspacesApi = {
   disable: (id: string) => api.post(`/workspaces/${id}/disable`),
   enable: (id: string) => api.post(`/workspaces/${id}/enable`),
   delete: (id: string) => api.delete(`/workspaces/${id}`),
-  getUsers: (id: string) => api.get<WorkspaceUser[]>(`/workspaces/${id}/users`)
+  getUsers: (id: string) => api.get<WorkspaceUser[]>(`/workspaces/${id}/users`),
+  triggerReindex: (id: string) => api.post<{ message: string }>(`/workspaces/${id}/reindex`)
 };
 
 // Analytics
