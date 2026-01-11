@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Modal, Button, Form, Tabs, Tab, Badge, Card, Row, Col } from 'react-bootstrap';
+import { Modal, Button, Form, Tabs, Tab, Badge, Card, Row, Col, ProgressBar, Alert } from 'react-bootstrap';
 import { RootState, AppDispatch, fetchWorkspace, clearCurrent } from '../../store';
 import { workspacesApi } from '../../api/client';
 import type { WorkspaceUser, WorkspaceSettings } from '../../types';
+
+interface IndexingStatus {
+  totalDocuments: number;
+  indexedDocuments: number;
+  pendingIndexing: number;
+  percentComplete: number;
+}
 
 function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -23,6 +30,8 @@ export default function WorkspaceDetails() {
   const [showDelete, setShowDelete] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const [settings, setSettings] = useState<WorkspaceSettings>({});
+  const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null);
+  const [showIndexingStatus, setShowIndexingStatus] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -86,12 +95,33 @@ export default function WorkspaceDetails() {
     }
   };
 
+  const fetchIndexingStatus = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await workspacesApi.getIndexingStatus(id);
+      setIndexingStatus(res.data);
+    } catch (err) {
+      console.error('Failed to fetch indexing status', err);
+    }
+  }, [id]);
+
+  // Poll for indexing status when showing
+  useEffect(() => {
+    if (!showIndexingStatus || !id) return;
+
+    fetchIndexingStatus();
+    const interval = setInterval(fetchIndexingStatus, 3000);
+
+    return () => clearInterval(interval);
+  }, [showIndexingStatus, id, fetchIndexingStatus]);
+
   const handleReindex = async () => {
     if (!id) return;
     setReindexing(true);
     try {
-      const res = await workspacesApi.triggerReindex(id);
-      alert(res.data.message);
+      await workspacesApi.triggerReindex(id);
+      setShowIndexingStatus(true);
+      fetchIndexingStatus();
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to trigger reindex');
     } finally {
@@ -176,6 +206,30 @@ export default function WorkspaceDetails() {
           </div>
         </div>
       </div>
+
+      {showIndexingStatus && indexingStatus && (
+        <Alert
+          variant={indexingStatus.pendingIndexing === 0 ? 'success' : 'info'}
+          dismissible
+          onClose={() => setShowIndexingStatus(false)}
+          className="mb-4"
+        >
+          <Alert.Heading>
+            {indexingStatus.pendingIndexing === 0 ? 'Indexing Complete' : 'Indexing in Progress'}
+          </Alert.Heading>
+          <ProgressBar
+            now={indexingStatus.percentComplete}
+            label={`${indexingStatus.percentComplete}%`}
+            animated={indexingStatus.pendingIndexing > 0}
+            variant={indexingStatus.pendingIndexing === 0 ? 'success' : 'info'}
+            className="mb-2"
+          />
+          <small>
+            {indexingStatus.indexedDocuments.toLocaleString()} / {indexingStatus.totalDocuments.toLocaleString()} documents indexed
+            {indexingStatus.pendingIndexing > 0 && ` (${indexingStatus.pendingIndexing.toLocaleString()} pending)`}
+          </small>
+        </Alert>
+      )}
 
       <div className="card">
         <div className="card-body">

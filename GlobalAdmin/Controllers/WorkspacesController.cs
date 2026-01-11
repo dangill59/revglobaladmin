@@ -262,6 +262,13 @@ public class WorkspacesController : ControllerBase
             return BadRequest(new { error = ex.Message });
         }
     }
+
+    [HttpGet("{id}/indexing-status")]
+    public async Task<IActionResult> GetIndexingStatus(string id)
+    {
+        var status = await _analyticsService.GetIndexingStatusAsync(id);
+        return Ok(status);
+    }
 }
 
 public record CreateWorkspaceRequest(string Name, string OwnerEmail, int MaxUsers = 5);

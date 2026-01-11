@@ -45,7 +45,13 @@ export const workspacesApi = {
   enable: (id: string) => api.post(`/workspaces/${id}/enable`),
   delete: (id: string) => api.delete(`/workspaces/${id}`),
   getUsers: (id: string) => api.get<WorkspaceUser[]>(`/workspaces/${id}/users`),
-  triggerReindex: (id: string) => api.post<{ message: string }>(`/workspaces/${id}/reindex`)
+  triggerReindex: (id: string) => api.post<{ message: string }>(`/workspaces/${id}/reindex`),
+  getIndexingStatus: (id: string) => api.get<{
+    totalDocuments: number;
+    indexedDocuments: number;
+    pendingIndexing: number;
+    percentComplete: number;
+  }>(`/workspaces/${id}/indexing-status`)
 };
 
 // Analytics

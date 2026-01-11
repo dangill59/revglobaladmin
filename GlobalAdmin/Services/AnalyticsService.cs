@@ -161,4 +161,49 @@ public class AnalyticsService
         }
         return $"{size:0.##} {sizes[order]}";
     }
+
+    public async Task<IndexingStatus> GetIndexingStatusAsync(string workspaceId)
+    {
+        var status = new IndexingStatus();
+
+        try
+        {
+            var dbName = $"rev_{workspaceId}";
+            var db = _mongoClient.GetDatabase(dbName);
+            var pageHolders = db.GetCollection<BsonDocument>("pageholders");
+
+            // Total documents
+            status.TotalDocuments = (int)await pageHolders.CountDocumentsAsync(
+                new BsonDocument("_t", "DocumentModel"));
+
+            // Documents pending indexing (catalogued != true)
+            var pendingFilter = Builders<BsonDocument>.Filter.And(
+                Builders<BsonDocument>.Filter.Eq("_t", "DocumentModel"),
+                Builders<BsonDocument>.Filter.Or(
+                    Builders<BsonDocument>.Filter.Exists("catalogued", false),
+                    Builders<BsonDocument>.Filter.Ne("catalogued", true)
+                )
+            );
+            status.PendingIndexing = (int)await pageHolders.CountDocumentsAsync(pendingFilter);
+
+            status.IndexedDocuments = status.TotalDocuments - status.PendingIndexing;
+            status.PercentComplete = status.TotalDocuments > 0
+                ? (int)((status.IndexedDocuments * 100.0) / status.TotalDocuments)
+                : 100;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting indexing status for workspace {WorkspaceId}", workspaceId);
+        }
+
+        return status;
+    }
+}
+
+public class IndexingStatus
+{
+    public int TotalDocuments { get; set; }
+    public int IndexedDocuments { get; set; }
+    public int PendingIndexing { get; set; }
+    public int PercentComplete { get; set; }
 }
