@@ -53,6 +53,7 @@ export default function WorkspaceDetails() {
         softDeleteEnabled: workspace.settings.softDeleteEnabled,
         customBrandingEnabled: workspace.settings.customBrandingEnabled,
         auditLogsEnabled: workspace.settings.auditLogsEnabled,
+        matchMergeEnabled: workspace.settings.matchMergeEnabled,
       });
     }
   }, [workspace]);
@@ -309,8 +310,19 @@ export default function WorkspaceDetails() {
                         checked={settings.auditLogsEnabled || false}
                         onChange={(e) => setSettings({ ...settings, auditLogsEnabled: e.target.checked })}
                       />
-                      <Form.Text className="text-muted d-block">
+                      <Form.Text className="text-muted d-block mb-3">
                         Track user actions and document changes
+                      </Form.Text>
+
+                      <Form.Check
+                        type="switch"
+                        id="matchMergeEnabled"
+                        label="Match & Merge"
+                        checked={settings.matchMergeEnabled || false}
+                        onChange={(e) => setSettings({ ...settings, matchMergeEnabled: e.target.checked })}
+                      />
+                      <Form.Text className="text-muted d-block">
+                        Sync document fields from external data sources
                       </Form.Text>
                     </Card.Body>
                   </Card>

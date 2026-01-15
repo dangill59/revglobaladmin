@@ -393,11 +393,20 @@ public class WorkspaceService
         else
             updates.Add(Builders<BsonDocument>.Update.Unset("features.scripts"));
 
-        // Two-Factor Auth
+        // Two-Factor Auth - only control feature availability, not enforcement
+        // When enabled: workspace admins can configure 2FA in their settings
+        // When disabled: 2FA options hidden AND any existing enforcement is turned off
         if (settings.FeatureTwoFactor)
+        {
             updates.Add(Builders<BsonDocument>.Update.Set("features.twofactorAuth.count", 1));
+            // Don't set securityConfig.twoFactorEnabled - let workspace admin control it
+        }
         else
+        {
             updates.Add(Builders<BsonDocument>.Update.Unset("features.twofactorAuth"));
+            // Disable any existing 2FA enforcement when feature is turned off
+            updates.Add(Builders<BsonDocument>.Update.Set("securityConfig.twoFactorEnabled", false));
+        }
 
         // Soft Delete
         if (settings.SoftDeleteEnabled)
@@ -405,24 +414,30 @@ public class WorkspaceService
         else
             updates.Add(Builders<BsonDocument>.Update.Unset("features.softDelete"));
 
-        // Custom Branding
+        // Custom Branding - the feature key is "branding" not "customBranding"
         if (settings.CustomBrandingEnabled)
-            updates.Add(Builders<BsonDocument>.Update.Set("features.customBranding.count", 1));
+            updates.Add(Builders<BsonDocument>.Update.Set("features.branding.count", 1));
         else
-            updates.Add(Builders<BsonDocument>.Update.Unset("features.customBranding"));
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.branding"));
 
-        // Audit Logs - set both the feature flag and the auditConfig.enabled field
-        // The app checks auditConfig.enabled, not features.auditLogs
+        // Audit Logs - the feature key is "audit" not "auditLogs"
+        // Also set auditConfig.enabled for the audit service to use
         if (settings.AuditLogsEnabled)
         {
-            updates.Add(Builders<BsonDocument>.Update.Set("features.auditLogs.count", 1));
+            updates.Add(Builders<BsonDocument>.Update.Set("features.audit.count", 1));
             updates.Add(Builders<BsonDocument>.Update.Set("auditConfig.enabled", true));
         }
         else
         {
-            updates.Add(Builders<BsonDocument>.Update.Unset("features.auditLogs"));
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.audit"));
             updates.Add(Builders<BsonDocument>.Update.Set("auditConfig.enabled", false));
         }
+
+        // Match & Merge - external data source sync feature
+        if (settings.MatchMergeEnabled)
+            updates.Add(Builders<BsonDocument>.Update.Set("features.matchMerge.count", 1));
+        else
+            updates.Add(Builders<BsonDocument>.Update.Unset("features.matchMerge"));
 
         var combinedUpdate = Builders<BsonDocument>.Update.Combine(updates);
         var result = await Workspaces.UpdateOneAsync(filter, combinedUpdate);
@@ -463,6 +478,7 @@ public class WorkspaceSettings
     public bool FeatureScripts { get; set; }
     public bool FeatureTwoFactor { get; set; }
     public bool AuditLogsEnabled { get; set; }
+    public bool MatchMergeEnabled { get; set; }
 
     // OCR
     public string OcrEngine { get; set; } = "tess";

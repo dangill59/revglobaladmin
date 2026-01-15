@@ -75,6 +75,10 @@ public class WorkspacesController : ControllerBase
         var auditConfig = workspace.Contains("auditConfig") && workspace["auditConfig"].IsBsonDocument
             ? workspace["auditConfig"].AsBsonDocument : new BsonDocument();
 
+        // Extract security config
+        var securityConfig = workspace.Contains("securityConfig") && workspace["securityConfig"].IsBsonDocument
+            ? workspace["securityConfig"].AsBsonDocument : new BsonDocument();
+
         return Ok(new
         {
             id = WorkspaceService.GetId(workspace),
@@ -105,7 +109,7 @@ public class WorkspacesController : ControllerBase
                 featureFullTextOcr = features.Contains("fullTextOCR"),
                 featureBarcode = features.Contains("barcode"),
                 featureScripts = features.Contains("scripts"),
-                featureTwoFactor = features.Contains("twofactorAuth"),
+                featureTwoFactor = securityConfig.Contains("twoFactorEnabled") && securityConfig["twoFactorEnabled"].AsBoolean,
 
                 // OCR
                 ocrEngine = features.Contains("fullTextOCR") && features["fullTextOCR"].IsBsonDocument
@@ -128,14 +132,17 @@ public class WorkspacesController : ControllerBase
                 suspendProcessing = WorkspaceService.GetBool(workspace, "suspendBackGroundImageProcessing"),
 
                 // Custom Branding
-                customBrandingEnabled = features.Contains("customBranding"),
+                customBrandingEnabled = features.Contains("branding"),
                 brandingLogoUrl = workspace.Contains("branding") && workspace["branding"].IsBsonDocument
                     ? WorkspaceService.GetString(workspace["branding"].AsBsonDocument, "logoUrl", "") : "",
                 brandingPrimaryColor = workspace.Contains("branding") && workspace["branding"].IsBsonDocument
                     ? WorkspaceService.GetString(workspace["branding"].AsBsonDocument, "primaryColor", "#0d6efd") : "#0d6efd",
 
                 // Audit Logs - check auditConfig.enabled (the field the app actually uses)
-                auditLogsEnabled = auditConfig.Contains("enabled") && auditConfig["enabled"].AsBoolean
+                auditLogsEnabled = auditConfig.Contains("enabled") && auditConfig["enabled"].AsBoolean,
+
+                // Match & Merge - external data source sync feature
+                matchMergeEnabled = features.Contains("matchMerge")
             }
         });
     }
@@ -268,6 +275,13 @@ public class WorkspacesController : ControllerBase
     {
         var status = await _analyticsService.GetIndexingStatusAsync(id);
         return Ok(status);
+    }
+
+    [HttpGet("{id}/uncatalogued-docs")]
+    public async Task<IActionResult> GetUncataloguedDocs(string id)
+    {
+        var docs = await _analyticsService.GetUncataloguedDocsAsync(id);
+        return Ok(docs);
     }
 }
 

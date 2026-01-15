@@ -42,6 +42,7 @@ export interface WorkspaceDetails extends Workspace {
     brandingLogoUrl: string;
     brandingPrimaryColor: string;
     auditLogsEnabled: boolean;
+    matchMergeEnabled: boolean;
   };
 }
 
@@ -136,4 +137,6 @@ export interface WorkspaceSettings {
   brandingPrimaryColor?: string;
   // Audit Logs
   auditLogsEnabled?: boolean;
+  // Match & Merge
+  matchMergeEnabled?: boolean;
 }
