@@ -109,7 +109,7 @@ public class WorkspacesController : ControllerBase
                 featureFullTextOcr = features.Contains("fullTextOCR"),
                 featureBarcode = features.Contains("barcode"),
                 featureScripts = features.Contains("scripts"),
-                featureTwoFactor = securityConfig.Contains("twoFactorEnabled") && securityConfig["twoFactorEnabled"].AsBoolean,
+                featureTwoFactor = features.Contains("twofactorAuth"),
 
                 // OCR
                 ocrEngine = features.Contains("fullTextOCR") && features["fullTextOCR"].IsBsonDocument
