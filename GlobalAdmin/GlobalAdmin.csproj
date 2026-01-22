@@ -8,20 +8,15 @@
     <SpaProxyServerUrl>http://localhost:5173</SpaProxyServerUrl>
   </PropertyGroup>
 
-  <!-- Reference shared libraries from rev repo -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\rev\commonInterfaces\commonInterfaces.csproj" />
-    <ProjectReference Include="..\..\rev\MongoDbService\MongoDbService.csproj" />
-    <ProjectReference Include="..\..\rev\BillingUtilities\BillingUtilities.csproj" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="3.7.400" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.19.1" />
     <PackageReference Include="MailKit" Version="4.14.1" />
     <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="8.0.11" />
+    <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
     <PackageReference Include="OpenSearch.Client" Version="1.8.0" />
     <PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
   </ItemGroup>
 
   <!-- Don't include ClientApp in publish - handled separately -->
